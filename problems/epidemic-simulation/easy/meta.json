@@ -1,0 +1,32 @@
+{
+  "title": {
+    "zh-Hant": "校園流言",
+    "en": "Campus Rumor"
+  },
+  "tags": {
+    "zh-Hant": [
+      "模擬",
+      "串列",
+      "迴圈"
+    ],
+    "en": [
+      "simulation",
+      "list",
+      "loops"
+    ]
+  },
+  "time_limit_ms": 2000,
+  "compare": "lines",
+  "hints": {
+    "zh-Hant": [
+      "用一個串列 new 記錄每一天新聽到的人數，new[i] 就是第 i 天那一批。",
+      "第 d 天失去興趣的人，就是第 d − R 天新聽到的那一批：new[d − R]（d − R < 1 時是 0）。",
+      "今天的新增要用「昨天結束時」的熱衷人數計算，算完再和還沒聽過的人數取較小值，最後才更新今天的熱衷人數。"
+    ],
+    "en": [
+      "Keep a list new where new[i] is the number of students who first heard the rumor on day i.",
+      "The students who lose interest on day d are exactly the batch from day d − R: new[d − R] (0 if d − R < 1).",
+      "Compute today's new count from yesterday's active count, cap it by the students who have not heard yet, and only then update today's active count."
+    ]
+  }
+}

@@ -87,6 +87,89 @@
           "hidden_count": 10
         }
       ]
+    },
+    {
+      "id": "epidemic-simulation",
+      "title": {
+        "zh-Hant": "三城市疫情分析",
+        "en": "Three-City Epidemic Analysis"
+      },
+      "concept": {
+        "zh-Hant": "逐日模擬多個族群的人數：每天嚴格依固定順序處理，用「前一天」的狀態計算今天的變化，並讓第 d − R 天的那一批人到期。",
+        "en": "Simulate group sizes day by day: process each day in a fixed order, compute today's changes from yesterday's state, and let the batch from day d − R expire."
+      },
+      "core": {
+        "zh-Hant": "讀入初始人數與比例 → 每天依序：（同步）移動 → 第 d − R 天那批人到期 → 用昨天的狀態算今天新增（無條件捨去、不超過可用人數）→ 更新狀態 → 輸出每日數字與總計",
+        "en": "Read initial counts and rates → each day in order: (synchronous) movement → the batch from day d − R expires → today's new count from yesterday's state (rounded down, capped by who is available) → update state → print daily numbers and totals"
+      },
+      "problems": [
+        {
+          "id": "epidemic-simulation-easy",
+          "difficulty": "easy",
+          "title": {
+            "zh-Hant": "校園流言",
+            "en": "Campus Rumor"
+          },
+          "tags": {
+            "zh-Hant": [
+              "模擬",
+              "串列",
+              "迴圈"
+            ],
+            "en": [
+              "simulation",
+              "list",
+              "loops"
+            ]
+          },
+          "sample_count": 2,
+          "hidden_count": 9
+        },
+        {
+          "id": "epidemic-simulation-medium",
+          "difficulty": "medium",
+          "title": {
+            "zh-Hant": "三島流感",
+            "en": "Flu on Three Islands"
+          },
+          "tags": {
+            "zh-Hant": [
+              "模擬",
+              "同步更新",
+              "整數運算"
+            ],
+            "en": [
+              "simulation",
+              "synchronous update",
+              "integer math"
+            ]
+          },
+          "sample_count": 2,
+          "hidden_count": 10
+        },
+        {
+          "id": "epidemic-simulation-hard",
+          "difficulty": "hard",
+          "title": {
+            "zh-Hant": "環形蜂場",
+            "en": "The Circular Apiary"
+          },
+          "tags": {
+            "zh-Hant": [
+              "模擬",
+              "同步更新",
+              "時間複雜度"
+            ],
+            "en": [
+              "simulation",
+              "synchronous update",
+              "time complexity"
+            ]
+          },
+          "sample_count": 2,
+          "hidden_count": 10
+        }
+      ]
     }
   ]
 }

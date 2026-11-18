@@ -1,0 +1,32 @@
+{
+  "title": {
+    "zh-Hant": "環形蜂場",
+    "en": "The Circular Apiary"
+  },
+  "tags": {
+    "zh-Hant": [
+      "模擬",
+      "同步更新",
+      "時間複雜度"
+    ],
+    "en": [
+      "simulation",
+      "synchronous update",
+      "time complexity"
+    ]
+  },
+  "time_limit_ms": 2000,
+  "compare": "lines",
+  "hints": {
+    "zh-Hant": [
+      "規則和三島流感一樣，只是蜂箱變成 K 個、天數最多 10⁴ 天。先確定每一天的處理順序。",
+      "每天找出「今天康復的蜂」時，不要掃過所有過去的批次，也不要把最近 R 天加總。第 d 天康復的就是 new[i][d − R]，查一次就好。",
+      "最高峰在每天更新完確診數之後檢查；用嚴格大於才更新，平手時就會保留最早的那一天。"
+    ],
+    "en": [
+      "The rules match Flu on Three Islands, but there are K hives and up to 10⁴ days. Get the order of each day right first.",
+      "To find today's recoveries, do not scan every past batch or sum the last R days. The bees that recover on day d are exactly new[i][d − R], a single lookup.",
+      "Check the peak after updating each day's sick count. Update only on strictly greater, so ties keep the earliest day."
+    ]
+  }
+}
