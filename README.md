@@ -2,9 +2,11 @@
 
 純前端的 Python 線上評測練習平台，直接部署在 GitHub Pages。
 
-- 使用者把自己的 `.py` 檔拖進題目頁，程式在瀏覽器裡用 [Pyodide](https://pyodide.org) 執行，不會上傳到任何地方
+- 直接在題目頁的編輯器寫程式（語法上色、自動縮排、Tab / Ctrl + / / Ctrl + Enter），草稿自動存在瀏覽器
+- 程式在瀏覽器裡用 [Pyodide](https://pyodide.org) 執行，不會上傳到任何地方；可以「執行範例」快速檢查、「提交」跑全部測資，或用自訂輸入試跑
+- 介面與題目支援繁體中文與英文，右上角切換
 - 每題都有公開範例測資，以及看不到資料的隱藏測資（專挑 0、最小值、平手、最大資料量等極端狀況）
-- 答錯時指出可能的原因：錯誤行號、常見例外的中文解釋、全形符號、`input("提示")` 多印的文字、輸出格式、差一錯誤、超時原因，以及隱藏測資的描述與提示
+- 答錯時指出可能的原因：錯誤行號（在編輯器中標紅，可一鍵跳過去）、常見例外的解釋、全形符號（打字時即時標出）、`input("提示")` 多印的文字、輸出格式、差一錯誤、超時原因，以及隱藏測資的描述與提示
 - 完成紀錄存在瀏覽器的 localStorage，可以匯出與匯入
 - 每個主題是一個「題目家族」：簡單、中等、困難三題，內容不同，核心結構相同
 
@@ -13,13 +15,14 @@
 ```
 docs/                     GitHub Pages 網站（純靜態，不需要建置前端）
   index.html
-  assets/js/              app.js（介面）、judge.js（評測流程）、judge-worker.js（Pyodide）、
-                          diagnose.js（錯誤分析）、highlight.js、store.js（localStorage）
+  assets/js/              app.js（介面）、editor.js（程式編輯器）、i18n.js（中英文介面文字）、
+                          judge.js（評測流程）、judge-worker.js（Pyodide）、diagnose.js（錯誤分析）、
+                          highlight.js、store.js（localStorage）
   assets/css/style.css
   data/                   由 tools/build.py 產生的題庫資料，不要手動編輯
 problems/                 題目原始檔（不會發佈到網頁）
   <family>/{easy,medium,hard}/
-    meta.json  statement.md  solution.py  cases.py  wrong/*.py
+    meta.json  statement.zh-Hant.md  statement.en.md  solution.py  cases.py  wrong/*.py
 tools/
   build.py                驗證題目並產生 docs/data/
   new_problem.py          建立新題目家族骨架
@@ -49,13 +52,13 @@ python -m http.server -d docs 8000 # 開啟 http://localhost:8000
 
 1. 拆解範例題的核心結構
 2. 設計簡單、中等、困難三個不同內容的變體
-3. 寫題目敘述、參考解、公開範例、隱藏測資（含極端狀況）與刻意寫錯的解
+3. 寫中英文題目敘述、參考解、公開範例、隱藏測資（含極端狀況）與刻意寫錯的解
 4. 執行 `python tools/build.py` 驗證：參考解產生所有答案，錯誤解必須被隱藏測資抓到
 
 手動新增的流程相同：
 
 ```bash
-python tools/new_problem.py two-pointers --title "雙指標"
+python tools/new_problem.py two-pointers --title "雙指標" --title-en "Two Pointers"
 # 填完 problems/two-pointers/ 裡所有 TODO
 python tools/build.py -v
 ```
@@ -67,7 +70,8 @@ python tools/build.py -v
 - 程式在 Web Worker 裡執行，超時會直接終止 worker 並重新啟動，無窮迴圈不會卡住頁面
 - 輸出比對預設忽略行尾空白與結尾空行（`compare: "lines"`），也支援 `tokens` 與 `float:<誤差>`
 - 連續兩組超時後，剩下的測資會略過，避免等太久
-- Chromium 系瀏覽器（Chrome、Edge）可以「重新檢查」同一個檔案，也可以勾選「存檔後自動重新檢查」：在編輯器存檔後，結果會自動更新。其他瀏覽器修改後需要重新拖入
+- 每題的程式草稿分開存在 localStorage（`pythex:code:<題目 id>`），完成紀錄另外存，可以匯出與匯入
+- 題目的顯示文字都是 `{"zh-Hant": ..., "en": ...}`，測資輸出與語言無關，一套測資同時給兩種語言使用
 
 ## 關於隱藏測資
 

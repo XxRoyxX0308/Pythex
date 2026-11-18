@@ -1,4 +1,5 @@
 import { outputsMatch } from "./diagnose.js";
+import { t } from "./i18n.js";
 
 const WORKER_URL = new URL("./judge-worker.js", import.meta.url);
 const MAX_TLE_BEFORE_SKIP = 2;
@@ -117,11 +118,11 @@ export function decodeHidden(b64) {
 /** Build the ordered list of test cases: samples first, then hidden. */
 export function buildCases(problem) {
   const samples = problem.samples.map((s, i) => ({
-    key: `s${i}`, name: `範例 ${i + 1}`, hidden: false,
+    key: `s${i}`, name: t("case.sample", { n: i + 1 }), hidden: false,
     input: s.input, output: s.output, explain: s.explain || "",
   }));
   const hidden = decodeHidden(problem.hidden).map((h, i) => ({
-    key: `h${i}`, name: `隱藏 ${i + 1}`, hidden: true,
+    key: `h${i}`, name: t("case.hidden", { n: i + 1 }), hidden: true,
     input: h.input, output: h.output, label: h.label, kind: h.kind, hint: h.hint || "",
   }));
   return [...samples, ...hidden];
@@ -139,7 +140,7 @@ export async function judge(engine, problem, cases, code, { onStart, onUpdate, i
   const compiled = await engine.compile(code);
   if (isCancelled()) return null;
   if (compiled.timeout || compiled.fatal) {
-    return { verdict: "SE", systemError: compiled.message || "編譯逾時", results: [] };
+    return { verdict: "SE", systemError: compiled.message || t("out.compileTimeout"), results: [] };
   }
   if (!compiled.ok) {
     return { verdict: "CE", compileError: compiled.error, results: [] };

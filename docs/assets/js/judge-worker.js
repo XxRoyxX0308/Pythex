@@ -37,7 +37,7 @@ def _format_tb(exc):
     out = ["Traceback (most recent call last):"]
     shown = frames[-MAX_FRAMES:]
     if len(frames) > len(shown):
-        out.append("  ...（省略 %d 層）" % (len(frames) - len(shown)))
+        out.append("  ... (%d more frames)" % (len(frames) - len(shown)))
     for f in shown:
         out.append('  File "%s", line %d, in %s' % (f.filename, f.lineno, f.name))
         if f.line:
@@ -111,7 +111,7 @@ self.onmessage = async (event) => {
   await boot;
   const { id, type, code, input } = event.data;
   if (!pyodide) {
-    self.postMessage({ id, fatal: true, message: "Python 執行環境沒有成功載入" });
+    self.postMessage({ id, fatal: true, message: "Python runtime is not available" });
     return;
   }
   try {

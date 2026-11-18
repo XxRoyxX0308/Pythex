@@ -44,7 +44,12 @@ DEFAULT_TIME_LIMIT = 2000
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 COMPARE_RE = re.compile(r"^(lines|tokens|float:\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)$")
-REQUIRED_HEADINGS = ("## 題目描述", "## 輸入格式", "## 輸出格式", "## 限制")
+LANGS = ("zh-Hant", "en")       # 每個顯示給使用者的文字欄位都必須提供這些語言
+REQUIRED_HEADINGS = {
+    "zh-Hant": ("## 題目描述", "## 輸入格式", "## 輸出格式", "## 限制"),
+    "en": ("## Description", "## Input", "## Output", "## Constraints"),
+}
+SAMPLE_HEADINGS = {"zh-Hant": "## 範例", "en": "## Example"}
 SAMPLE_KEYS = {"input", "explain"}
 HIDDEN_KEYS = {"input", "label", "kind", "hint"}
 META_KEYS = {"title", "tags", "time_limit_ms", "compare", "hints"}
@@ -136,6 +141,44 @@ def has_todo(text: str) -> bool:
     return "TODO" in text
 
 
+def zh(value) -> str:
+    """多語言物件的中文版本（用於報告輸出）。"""
+    if isinstance(value, dict):
+        return str(value.get("zh-Hant", ""))
+    return str(value or "")
+
+
+def check_localized(value, where: str, report, kind: str = "str", required: bool = True):
+    """驗證 {"zh-Hant": ..., "en": ...} 多語言欄位。回傳通過驗證的 dict 或 None。"""
+    if value in (None, "", [], {}):
+        if required:
+            report(f"{where} 需要提供 {' / '.join(LANGS)} 語言版本")
+        return None
+    if not isinstance(value, dict):
+        report(f'{where} 必須是多語言物件，例如 {{"zh-Hant": "中文", "en": "English"}}')
+        return None
+    ok = True
+    missing = [lang for lang in LANGS if lang not in value]
+    extra = [k for k in value if k not in LANGS]
+    if missing:
+        report(f"{where} 缺少語言 {missing}")
+        ok = False
+    if extra:
+        report(f"{where} 有不支援的語言 {extra}，只允許 {list(LANGS)}")
+        ok = False
+    for lang in LANGS:
+        v = value.get(lang)
+        if v is None:
+            continue
+        if kind == "str" and not (isinstance(v, str) and v.strip()):
+            report(f"{where}.{lang} 必須是非空字串")
+            ok = False
+        if kind == "list" and not (isinstance(v, list) and all(isinstance(x, str) and x.strip() for x in v)):
+            report(f"{where}.{lang} 必須是字串陣列")
+            ok = False
+    return value if ok else None
+
+
 # ---------------------------------------------------------------- model
 
 @dataclass
@@ -143,10 +186,10 @@ class Case:
     name: str
     input: str
     hidden: bool
-    label: str = ""
+    label: dict | None = None
     kind: str = "normal"
-    hint: str = ""
-    explain: str = ""
+    hint: dict | None = None
+    explain: dict | None = None
     output: str = ""
 
 
@@ -159,7 +202,7 @@ class Problem:
     warnings: list[str] = field(default_factory=list)
     report: list[str] = field(default_factory=list)
     meta: dict = field(default_factory=dict)
-    statement: str = ""
+    statement: dict = field(default_factory=dict)
     cases: list[Case] = field(default_factory=list)
 
     @property
@@ -185,7 +228,7 @@ class Problem:
 
 def load_problem(family: str, difficulty: str, path: Path) -> Problem:
     p = Problem(family, difficulty, path)
-    for fname in ("meta.json", "statement.md", "solution.py", "cases.py"):
+    for fname in ("meta.json", *(f"statement.{lang}.md" for lang in LANGS), "solution.py", "cases.py"):
         if not (path / fname).is_file():
             p.err(f"缺少 {fname}")
     if p.errors:
@@ -200,32 +243,33 @@ def load_problem(family: str, difficulty: str, path: Path) -> Problem:
     unknown = set(p.meta) - META_KEYS
     if unknown:
         p.err(f"meta.json 有未知欄位：{sorted(unknown)}")
-    if not isinstance(p.meta.get("title"), str) or not p.meta["title"].strip():
-        p.err("meta.json 需要 title")
-    if not isinstance(p.meta.get("tags", []), list):
-        p.err("tags 必須是陣列")
+    check_localized(p.meta.get("title"), "meta.json title", p.err)
+    check_localized(p.meta.get("tags"), "meta.json tags", p.err, kind="list")
     tl = p.meta.get("time_limit_ms", DEFAULT_TIME_LIMIT)
     if not isinstance(tl, int) or not 500 <= tl <= 10000:
         p.err("time_limit_ms 必須是 500 到 10000 的整數")
     if not COMPARE_RE.match(str(p.meta.get("compare", "lines"))):
         p.err("compare 只能是 lines、tokens 或 float:<誤差>")
-    hints = p.meta.get("hints", [])
-    if not isinstance(hints, list) or not all(isinstance(h, str) for h in hints):
-        p.err("hints 必須是字串陣列")
-    elif not hints:
+    hints = check_localized(p.meta.get("hints"), "meta.json hints", p.err, kind="list", required=False)
+    if not hints:
         p.warn("沒有任何 hints，建議至少寫 1 到 3 個循序漸進的提示")
+    elif len({len(hints[lang]) for lang in LANGS}) > 1:
+        p.warn("各語言的 hints 數量不同，請確認是逐條翻譯")
     if has_todo(json.dumps(p.meta, ensure_ascii=False)):
         p.err("meta.json 還有 TODO")
 
-    # statement.md
-    p.statement = (path / "statement.md").read_text(encoding="utf-8").strip() + "\n"
-    if has_todo(p.statement):
-        p.err("statement.md 還有 TODO")
-    for heading in REQUIRED_HEADINGS:
-        if heading not in p.statement:
-            p.err(f"statement.md 缺少段落「{heading}」")
-    if "## 範例" in p.statement:
-        p.warn("statement.md 不需要寫範例，網頁會自動從 cases.py 的 SAMPLES 產生")
+    # statement.<lang>.md
+    for lang in LANGS:
+        fname = f"statement.{lang}.md"
+        text = (path / fname).read_text(encoding="utf-8").strip() + "\n"
+        p.statement[lang] = text
+        if has_todo(text):
+            p.err(f"{fname} 還有 TODO")
+        for heading in REQUIRED_HEADINGS[lang]:
+            if heading not in text:
+                p.err(f"{fname} 缺少段落「{heading}」")
+        if SAMPLE_HEADINGS[lang] in text:
+            p.warn(f"{fname} 不需要寫範例，網頁會自動從 cases.py 的 SAMPLES 產生")
 
     for script in ("solution.py", "cases.py"):
         if has_todo((path / script).read_text(encoding="utf-8")):
@@ -250,7 +294,8 @@ def load_problem(family: str, difficulty: str, path: Path) -> Problem:
         extra = set(item) - SAMPLE_KEYS
         if extra:
             p.err(f"SAMPLES[{i - 1}] 有未知欄位 {sorted(extra)}")
-        p.cases.append(Case(f"範例 {i}", fix_input(item["input"]), False, explain=item.get("explain", "")))
+        explain = check_localized(item.get("explain"), f"SAMPLES[{i - 1}].explain", p.err, required=False)
+        p.cases.append(Case(f"範例 {i}", fix_input(item["input"]), False, explain=explain))
 
     for i, item in enumerate(hidden, 1):
         if not isinstance(item, dict) or not isinstance(item.get("input"), str):
@@ -259,14 +304,12 @@ def load_problem(family: str, difficulty: str, path: Path) -> Problem:
         extra = set(item) - HIDDEN_KEYS
         if extra:
             p.err(f"HIDDEN[{i - 1}] 有未知欄位 {sorted(extra)}")
-        label = str(item.get("label", "")).strip()
+        label = check_localized(item.get("label"), f"HIDDEN[{i - 1}].label", p.err)
+        hint = check_localized(item.get("hint"), f"HIDDEN[{i - 1}].hint", p.err, required=False)
         kind = item.get("kind", "normal")
-        if not label:
-            p.err(f"HIDDEN[{i - 1}] 需要 label（使用者答錯時看到的測資描述）")
         if kind not in KINDS:
             p.err(f"HIDDEN[{i - 1}] kind 必須是 {KINDS} 之一")
-        p.cases.append(Case(f"隱藏 {i}", fix_input(item["input"]), True,
-                            label=label, kind=kind, hint=str(item.get("hint", "")).strip()))
+        p.cases.append(Case(f"隱藏 {i}", fix_input(item["input"]), True, label=label, kind=kind, hint=hint))
 
     sample_cases = [c for c in p.cases if not c.hidden]
     hidden_cases = [c for c in p.cases if c.hidden]
@@ -278,7 +321,7 @@ def load_problem(family: str, difficulty: str, path: Path) -> Problem:
         p.err(f"隱藏測資至少需要 {MIN_EDGE} 組 kind=\"edge\"（極端狀況，例如 0、最小 n、全部相同）")
     if difficulty == "hard" and not any(c.kind == "stress" for c in hidden_cases):
         p.err("hard 題需要至少 1 組 kind=\"stress\"（最大資料量，用來擋掉太慢的解法）")
-    labels = [c.label for c in hidden_cases]
+    labels = [zh(c.label) for c in hidden_cases]
     dup_labels = {x for x in labels if labels.count(x) > 1}
     if dup_labels:
         p.err(f"隱藏測資 label 重複：{sorted(dup_labels)}")
@@ -305,7 +348,7 @@ def judge_problem(p: Problem, pool: ThreadPoolExecutor, verbose: bool):
 
     slowest = 0.0
     for case, res in zip(p.cases, results):
-        where = f"{case.name}{'（' + case.label + '）' if case.label else ''}"
+        where = f"{case.name}{'（' + zh(case.label) + '）' if case.label else ''}"
         if res.status == "TLE":
             p.err(f"solution.py 在 {where} 執行超時")
             continue
@@ -365,12 +408,12 @@ def problem_payload(p: Problem, family_meta: dict) -> dict:
         "family": p.family,
         "family_title": family_meta["title"],
         "difficulty": p.difficulty,
-        "title": p.meta["title"].strip(),
-        "tags": p.meta.get("tags", []),
+        "title": p.meta["title"],
+        "tags": p.meta["tags"],
         "time_limit_ms": p.time_limit,
         "compare": p.compare,
         "statement": p.statement,
-        "hints": p.meta.get("hints", []),
+        "hints": p.meta.get("hints") or {lang: [] for lang in LANGS},
         "samples": [{"input": c.input, "output": c.output, "explain": c.explain} for c in samples],
         "hidden_count": len(hidden),
         "hidden": encode_hidden([
@@ -414,8 +457,7 @@ def main() -> int:
         if unknown:
             fatal.append(f"{slug}: family.json 有未知欄位 {sorted(unknown)}")
         for key in ("title", "concept", "core"):
-            if not str(fam_meta.get(key, "")).strip():
-                fatal.append(f"{slug}: family.json 需要 {key}")
+            check_localized(fam_meta.get(key), f"{slug}/family.json {key}", fatal.append)
         if has_todo(json.dumps(fam_meta, ensure_ascii=False)):
             fatal.append(f"{slug}: family.json 還有 TODO")
         problems = []
@@ -428,7 +470,7 @@ def main() -> int:
         extra = [d.name for d in fam_dir.iterdir() if d.is_dir() and d.name not in DIFFICULTIES]
         if extra:
             fatal.append(f"{slug}: 不認得的資料夾 {extra}，只允許 easy / medium / hard")
-        titles = [p.meta.get("title") for p in problems if p.meta]
+        titles = [zh(p.meta.get("title")) for p in problems if p.meta]
         if len(set(titles)) != len(titles):
             fatal.append(f"{slug}: 三個難度的題目名稱必須不同")
         families.append((slug, fam_meta, problems))
@@ -446,13 +488,13 @@ def main() -> int:
     for msg in fatal:
         print(f"[錯誤] {msg}")
     for slug, fam_meta, problems in families:
-        print(f"\n{slug}  {fam_meta.get('title', '')}")
+        print(f"\n{slug}  {zh(fam_meta.get('title'))}")
         for p in problems:
             hidden = [c for c in p.cases if c.hidden]
             kinds = {k: sum(c.kind == k for c in hidden) for k in KINDS}
             kind_txt = " ".join(f"{k}:{v}" for k, v in kinds.items() if v)
             mark = "失敗" if p.errors else "通過"
-            print(f"  [{mark}] {p.difficulty:<6} {p.meta.get('title', '?')}  "
+            print(f"  [{mark}] {p.difficulty:<6} {zh(p.meta.get('title')) or '?'}  "
                   f"範例 {len(p.cases) - len(hidden)} / 隱藏 {len(hidden)} ({kind_txt})")
             for line in p.report:
                 print(line)
@@ -470,7 +512,7 @@ def main() -> int:
     # build outputs
     families.sort(key=lambda f: (f[1].get("order", 999), f[0]))
     outputs: dict[Path, str] = {}
-    index = {"version": 1, "families": []}
+    index = {"version": 2, "languages": list(LANGS), "families": []}
     for slug, fam_meta, problems in families:
         entry = {
             "id": slug,

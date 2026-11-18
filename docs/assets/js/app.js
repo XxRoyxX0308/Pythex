@@ -2,29 +2,19 @@ import { marked } from "https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.es
 import { Engine, buildCases, judge } from "./judge.js";
 import { explainError, diagnoseWrongAnswer, explainTimeout, normalize } from "./diagnose.js";
 import { highlightPython } from "./highlight.js";
+import { CodeEditor } from "./editor.js";
 import { store } from "./store.js";
+import { t, loc, lang, setLang } from "./i18n.js";
 
 /* ------------------------------------------------------------------ constants */
 
-const DIFF = {
-  easy: { label: "簡單", level: 1 },
-  medium: { label: "中等", level: 2 },
-  hard: { label: "困難", level: 3 },
+const LEVEL = { easy: 1, medium: 2, hard: 3 };
+const VERDICT_ICON = {
+  AC: "check-circle", WA: "x-circle", RE: "warning-octagon", TLE: "timer", CE: "code",
+  SE: "plugs", SK: "skip-forward", RUN: "circle", WAIT: "circle",
 };
-const VERDICT = {
-  AC: { label: "通過", icon: "check-circle" },
-  WA: { label: "答案錯誤", icon: "x-circle" },
-  RE: { label: "執行錯誤", icon: "warning-octagon" },
-  TLE: { label: "超過時間", icon: "timer" },
-  CE: { label: "語法錯誤", icon: "code" },
-  SE: { label: "系統錯誤", icon: "plugs" },
-  SK: { label: "已略過", icon: "skip-forward" },
-  RUN: { label: "執行中", icon: "circle-notch" },
-  WAIT: { label: "等待中", icon: "circle" },
-};
-const KIND = { normal: "一般", edge: "極端", boundary: "邊界", stress: "大量資料" };
-const MAX_FILE_BYTES = 200_000;
 const MAX_SHOW_LINES = 120;
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 marked.setOptions({ gfm: true, breaks: false });
 
@@ -33,15 +23,17 @@ const toastEl = document.getElementById("toast");
 let indexData = null;
 const problemCache = new Map();
 let engine = null;
-let view = null; // current view controller, has destroy()
+let view = null;
 
 /* ------------------------------------------------------------------ helpers */
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const icon = (name, extra = "") => `<i class="ph ph-${name} ${extra}" aria-hidden="true"></i>`;
 const bars = (level) => `<span class="bars" data-level="${level}" aria-hidden="true"><i></i><i></i><i></i></span>`;
-const ms = (t) => (t == null ? "" : t >= 1000 ? `${(t / 1000).toFixed(2)} s` : `${Math.max(1, Math.round(t))} ms`);
-const seconds = (limit) => `${(limit / 1000).toFixed(limit % 1000 ? 1 : 0)} 秒`;
+const diffLabel = (d) => t(`diff.${d}`);
+const vLabel = (v) => t(`v.${v}`);
+const ms = (x) => (x == null ? "" : x >= 1000 ? `${(x / 1000).toFixed(2)} s` : `${Math.max(1, Math.round(x))} ms`);
+const secs = (limit) => (limit / 1000).toFixed(limit % 1000 ? 1 : 0);
 
 function toast(message) {
   toastEl.textContent = message;
@@ -68,40 +60,43 @@ async function loadProblem(id) {
   return problemCache.get(id);
 }
 
-function allProblems(idx) {
-  return idx.families.flatMap((f) => f.problems.map((p) => ({ ...p, family: f })));
-}
+const allProblems = (idx) => idx.families.flatMap((f) => f.problems.map((p) => ({ ...p, family: f })));
 
 function loadErrorView(err) {
-  const local = location.protocol === "file:";
   return `
     <section class="state-block">
       ${icon("cloud-slash", "state-icon")}
-      <h1>題庫讀取失敗</h1>
-      <p>${local
-        ? "直接開啟 index.html 時瀏覽器不允許讀取題庫。請在專案資料夾執行 <code>python -m http.server -d docs</code>，再打開 <code>http://localhost:8000</code>。"
-        : `請稍後重新整理。錯誤訊息：${esc(err.message)}`}</p>
-      <a class="btn btn-primary" href="#/">${icon("arrow-clockwise")}重新整理</a>
+      <h1>${t("load.title")}</h1>
+      <p>${location.protocol === "file:" ? t("load.local") : esc(t("load.retry", { msg: err.message }))}</p>
+      <a class="btn btn-primary" href="#/">${icon("arrow-clockwise")}${t("load.reload")}</a>
     </section>`;
 }
 
-/* ------------------------------------------------------------------ header & theme */
+/* ------------------------------------------------------------------ chrome: header, theme, language */
 
 const THEMES = ["auto", "light", "dark"];
-const THEME_META = {
-  auto: { icon: "circle-half", label: "跟隨系統" },
-  light: { icon: "sun", label: "淺色" },
-  dark: { icon: "moon", label: "深色" },
-};
+const THEME_ICON = { auto: "circle-half", light: "sun", dark: "moon" };
 
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === "auto") delete root.dataset.theme;
   else root.dataset.theme = theme;
   const btn = document.getElementById("theme-toggle");
-  btn.innerHTML = icon(THEME_META[theme].icon);
-  btn.setAttribute("aria-label", `主題：${THEME_META[theme].label}，點擊切換`);
-  btn.title = `主題：${THEME_META[theme].label}`;
+  const label = t("theme.aria", { name: t(`theme.${theme}`) });
+  btn.innerHTML = icon(THEME_ICON[theme]);
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+}
+
+function applyChrome() {
+  applyTheme(store.pref("theme", "auto"));
+  const langBtn = document.getElementById("lang-toggle");
+  langBtn.textContent = t("lang.short");
+  langBtn.setAttribute("aria-label", t("lang.switch"));
+  langBtn.title = t("lang.switch");
+  document.querySelector(".skip-link").textContent = t("skip");
+  document.querySelector(".brand").setAttribute("aria-label", t("nav.home"));
+  updateHeader();
 }
 
 document.getElementById("theme-toggle").addEventListener("click", () => {
@@ -109,15 +104,19 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
   store.setPref("theme", next);
   applyTheme(next);
 });
-applyTheme(store.pref("theme", "auto"));
+
+document.getElementById("lang-toggle").addEventListener("click", () => {
+  setLang(lang() === "zh-Hant" ? "en" : "zh-Hant");
+  applyChrome();
+  route({ keepScroll: true });
+});
 
 async function updateHeader() {
   const el = document.getElementById("hdr-progress");
   try {
-    const idx = await loadIndex();
-    const all = allProblems(idx);
+    const all = allProblems(await loadIndex());
     const solved = all.filter((p) => store.isSolved(p.id)).length;
-    el.innerHTML = `${icon("check-circle")}<span>已完成 <b>${solved}</b> / ${all.length}</span>`;
+    el.innerHTML = `${icon("check-circle")}<span>${t("nav.progress", { n: solved, total: all.length })}</span>`;
     el.hidden = false;
   } catch {
     el.hidden = true;
@@ -128,52 +127,52 @@ store.subscribe(updateHeader);
 /* ------------------------------------------------------------------ home */
 
 function rungStatus(p) {
-  if (store.isSolved(p.id)) return `<span class="rung-status is-solved">${icon("check-circle", "ph-fill")}已完成</span>`;
+  if (store.isSolved(p.id)) return `<span class="rung-status is-solved">${icon("check-circle", "ph-fill")}${t("rung.solved")}</span>`;
   const a = store.attempt(p.id);
-  if (a) return `<span class="rung-status is-tried">${icon("circle-dashed")}最近 ${a.passed}/${a.total}</span>`;
-  return `<span class="rung-status">${icon("circle")}尚未作答</span>`;
+  if (a) return `<span class="rung-status is-tried">${icon("circle-dashed")}${t("rung.tried", { p: a.passed, t: a.total })}</span>`;
+  return `<span class="rung-status">${icon("circle")}${t("rung.new")}</span>`;
 }
 
-/* A real, looping preview of the judge panel: it tells the product's story
- * (drop file → hidden edge case fails with a hint → fix → all pass). */
-const DEMO_ROWS = [
-  { name: "範例 1", label: "公開範例" },
-  { name: "範例 2", label: "公開範例" },
-  { name: "隱藏 1", label: "開燈戶數比 N 還少", kind: "edge" },
-  { name: "隱藏 2", label: "中心格同時屬於兩條對角線", kind: "edge" },
-  { name: "隱藏 3", label: "只有右上到左下的對角線連線", kind: "edge", fails: true },
-  { name: "隱藏 4", label: "公布的最後一戶才完成連線", kind: "boundary" },
-];
+/* A real, looping preview of the judge: submit → a hidden edge case fails with a hint → fix → all pass. */
+function demoRows() {
+  return [
+    { name: t("case.sample", { n: 1 }), label: t("case.public") },
+    { name: t("case.sample", { n: 2 }), label: t("case.public") },
+    { name: t("case.hidden", { n: 1 }), label: t("demo.r3"), kind: "edge" },
+    { name: t("case.hidden", { n: 2 }), label: t("demo.r4"), kind: "edge" },
+    { name: t("case.hidden", { n: 3 }), label: t("demo.r5"), kind: "edge", fails: true },
+    { name: t("case.hidden", { n: 4 }), label: t("demo.r6"), kind: "boundary" },
+  ];
+}
 
 function demoRow(row, verdict) {
-  const v = VERDICT[verdict];
-  const mark = verdict === "RUN" ? `<span class="pulse-dot"></span>` : icon(v.icon, verdict === "AC" ? "ph-fill" : "");
+  const mark = verdict === "RUN" ? `<span class="pulse-dot"></span>` : icon(VERDICT_ICON[verdict], verdict === "AC" ? "ph-fill" : "");
   return `
     <li class="case" data-v="${verdict.toLowerCase()}">
       <div class="case-head">
         <span class="case-icon">${mark}</span>
-        <span class="case-name">${row.name}</span>
-        <span class="case-label">${esc(row.label)}${row.kind ? `<em class="kind">${KIND[row.kind]}</em>` : ""}</span>
+        <span class="case-name">${esc(row.name)}</span>
+        <span class="case-label">${esc(row.label)}${row.kind ? `<em class="kind">${t(`kind.${row.kind}`)}</em>` : ""}</span>
         <span class="case-time"></span>
-        <span class="case-verdict">${v.label}</span>
+        <span class="case-verdict">${vLabel(verdict)}</span>
       </div>
     </li>`;
 }
 
 function startDemo(root) {
+  const rows = demoRows();
   const list = root.querySelector(".demo-cases");
   const state = root.querySelector(".demo-state");
   const hint = root.querySelector(".demo-hint");
-  const file = root.querySelector(".demo-file small");
+  const sub = root.querySelector(".demo-file small");
   let stopped = false;
-  const sleep = (t) => new Promise((r) => setTimeout(r, t));
-  const paint = (verdicts) => { list.innerHTML = DEMO_ROWS.map((r, i) => demoRow(r, verdicts[i])).join(""); };
+  const sleep = (x) => new Promise((r) => setTimeout(r, x));
+  const paint = (vs) => { list.innerHTML = rows.map((r, i) => demoRow(r, vs[i])).join(""); };
   const setState = (text, tone) => { state.textContent = text; state.dataset.tone = tone; };
 
-  const finalFail = DEMO_ROWS.map((r) => (r.fails ? "WA" : "AC"));
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    paint(finalFail);
-    setState("答案錯誤 5 / 6", "bad");
+    paint(rows.map((r) => (r.fails ? "WA" : "AC")));
+    setState(t("demo.fail"), "bad");
     hint.hidden = false;
     return () => {};
   }
@@ -181,25 +180,25 @@ function startDemo(root) {
   (async () => {
     while (!stopped) {
       for (const fixed of [false, true]) {
-        const verdicts = DEMO_ROWS.map(() => "WAIT");
+        const vs = rows.map(() => "WAIT");
         hint.hidden = true;
-        file.textContent = fixed ? "存檔後自動重新檢查" : "剛剛拖進來";
-        setState("評測中", "run");
-        paint(verdicts);
+        sub.textContent = fixed ? t("demo.second") : t("demo.first");
+        setState(t("demo.judging"), "run");
+        paint(vs);
         await sleep(700);
-        for (let i = 0; i < DEMO_ROWS.length && !stopped; i++) {
-          verdicts[i] = "RUN";
-          paint(verdicts);
+        for (let i = 0; i < rows.length && !stopped; i++) {
+          vs[i] = "RUN";
+          paint(vs);
           await sleep(420);
-          verdicts[i] = DEMO_ROWS[i].fails && !fixed ? "WA" : "AC";
-          paint(verdicts);
+          vs[i] = rows[i].fails && !fixed ? "WA" : "AC";
+          paint(vs);
         }
         if (stopped) return;
         if (fixed) {
-          setState("全部通過 6 / 6", "ok");
+          setState(t("demo.pass"), "ok");
           await sleep(3200);
         } else {
-          setState("答案錯誤 5 / 6", "bad");
+          setState(t("demo.fail"), "bad");
           await sleep(500);
           hint.hidden = false;
           await sleep(3600);
@@ -211,8 +210,8 @@ function startDemo(root) {
 }
 
 function renderHome() {
-  document.title = "Pythex 題目列表";
-  app.innerHTML = `<div class="skeleton-home"><div class="sk-cols"><div><div class="sk sk-title"></div><div class="sk sk-line"></div></div><div class="sk sk-block"></div></div><div class="sk sk-block"></div><div class="sk sk-block"></div></div>`;
+  document.title = t("home.doc");
+  app.innerHTML = `<div class="skeleton-home"><div class="sk-cols"><div><div class="sk sk-title"></div><div class="sk sk-line"></div></div><div class="sk sk-block"></div></div><div class="sk sk-block"></div></div>`;
   let filters = { q: "", diff: "all", status: "all", ...store.pref("filters", {}) };
   let disposed = false;
   let cleanup = () => {};
@@ -222,32 +221,30 @@ function renderHome() {
     const all = allProblems(idx);
     const solved = all.filter((p) => store.isSolved(p.id)).length;
     const start = all.find((p) => !store.isSolved(p.id)) || all[0];
-    const ctaLabel = solved === 0 ? "開始第一題" : solved === all.length ? "回顧題目" : "繼續練習";
+    const cta = solved === 0 ? t("hero.start") : solved === all.length ? t("hero.review") : t("hero.continue");
 
     app.innerHTML = `
       <section class="hero">
         <div class="hero-copy">
-          <h1><span>把 .py 拖進來，</span><span>立刻知道哪裡錯。</span></h1>
-          <p class="lede">範例測資公開，隱藏測資專挑極端情況。答錯時會指出是哪一種情況出錯，以及可能的原因。</p>
+          <h1><span>${t("hero.a")}</span> <span>${t("hero.b")}</span></h1>
+          <p class="lede">${t("hero.lede")}</p>
           <div class="hero-actions">
-            ${start ? `<a class="btn btn-primary btn-lg" href="#/p/${start.id}">${ctaLabel}${icon("arrow-right")}</a>` : ""}
-            <span class="hero-note">${icon("lock-simple")}程式只在你的瀏覽器執行</span>
+            ${start ? `<a class="btn btn-primary btn-lg" href="#/p/${start.id}">${cta}${icon("arrow-right")}</a>` : ""}
+            <span class="hero-note">${icon("lock-simple")}${t("hero.note")}</span>
           </div>
           <ol class="steps">
-            <li><span class="step-n">1</span><div><b>用 input() 讀資料</b><span>測資從標準輸入送進程式，就像有人在鍵盤上打字。</span></div></li>
-            <li><span class="step-n">2</span><div><b>用 print() 印答案</b><span>只印題目要求的內容，不要加「請輸入」之類的提示文字。</span></div></li>
-            <li><span class="step-n">3</span><div><b>把檔案拖進題目頁</b><span>每組測資跑完立刻看到結果，錯了會給提示。</span></div></li>
+            ${[1, 2, 3].map((n) => `<li><span class="step-n">${n}</span><div><b>${t(`step${n}.t`)}</b><span>${esc(t(`step${n}.d`))}</span></div></li>`).join("")}
           </ol>
         </div>
         <div class="hero-demo" aria-hidden="true">
           <div class="demo">
             <div class="demo-file">
               ${icon("file-py")}
-              <div><b>solution.py</b><small>剛剛拖進來</small></div>
-              <span class="demo-state" data-tone="run">評測中</span>
+              <div><b>main.py</b><small>${t("demo.first")}</small></div>
+              <span class="demo-state" data-tone="run">${t("demo.judging")}</span>
             </div>
             <ol class="cases demo-cases"></ol>
-            <p class="test-hint demo-hint" hidden>${icon("lightbulb")}<span>對角線有兩條。右上到左下那條的格子滿足 r + c == N - 1。</span></p>
+            <p class="test-hint demo-hint" hidden>${icon("lightbulb")}<span>${esc(t("demo.hint"))}</span></p>
           </div>
         </div>
       </section>
@@ -256,42 +253,42 @@ function renderHome() {
         <div class="board-main">
           <div class="toolbar" role="search">
             <div class="search">
-              <label for="q" class="sr-only">搜尋題目</label>
+              <label for="q" class="sr-only">${t("search.label")}</label>
               ${icon("magnifying-glass")}
-              <input id="q" type="search" placeholder="搜尋題名、主題或標籤" value="${esc(filters.q)}" autocomplete="off">
+              <input id="q" type="search" placeholder="${esc(t("search.ph"))}" value="${esc(filters.q)}" autocomplete="off">
             </div>
-            <div class="seg" role="group" aria-label="難度">
-              ${[["all", "全部"], ["easy", "簡單"], ["medium", "中等"], ["hard", "困難"]].map(([v, l]) =>
-                `<button type="button" data-filter="diff" data-value="${v}" aria-pressed="${filters.diff === v}">${l}</button>`).join("")}
+            <div class="seg" role="group" aria-label="${t("filter.diff")}">
+              ${["all", "easy", "medium", "hard"].map((v) =>
+                `<button type="button" data-filter="diff" data-value="${v}" aria-pressed="${filters.diff === v}">${v === "all" ? t("filter.all") : diffLabel(v)}</button>`).join("")}
             </div>
-            <div class="seg" role="group" aria-label="狀態">
-              ${[["all", "全部"], ["todo", "未完成"], ["done", "已完成"]].map(([v, l]) =>
-                `<button type="button" data-filter="status" data-value="${v}" aria-pressed="${filters.status === v}">${l}</button>`).join("")}
+            <div class="seg" role="group" aria-label="${t("filter.status")}">
+              ${[["all", "filter.all"], ["todo", "filter.todo"], ["done", "filter.done"]].map(([v, k]) =>
+                `<button type="button" data-filter="status" data-value="${v}" aria-pressed="${filters.status === v}">${t(k)}</button>`).join("")}
             </div>
           </div>
           <div class="families" id="families" aria-live="polite"></div>
         </div>
 
-        <aside class="board-side" aria-label="完成進度">
+        <aside class="board-side" aria-label="${t("side.aria")}">
           <div class="side-panel">
-            <p class="progress-num"><b>${solved}</b><span>/ ${all.length} 題完成</span></p>
+            <p class="progress-num"><b>${solved}</b><span>${t("side.of", { total: all.length })}</span></p>
             <div class="progress-rows">
-              ${Object.keys(DIFF).map((d) => {
+              ${Object.keys(LEVEL).map((d) => {
                 const list = all.filter((p) => p.difficulty === d);
                 return `
                   <div class="progress-row">
-                    <span class="progress-label">${bars(DIFF[d].level)}${DIFF[d].label}</span>
-                    <span class="progress-cells">${list.map((p) => `<a href="#/p/${p.id}" class="cell ${store.isSolved(p.id) ? "is-on" : ""}" title="${esc(p.title)}" aria-label="${esc(p.title)}${store.isSolved(p.id) ? "，已完成" : ""}"></a>`).join("") || `<span class="muted small">尚無題目</span>`}</span>
+                    <span class="progress-label">${bars(LEVEL[d])}${diffLabel(d)}</span>
+                    <span class="progress-cells">${list.map((p) => `<a href="#/p/${p.id}" class="cell ${store.isSolved(p.id) ? "is-on" : ""}" title="${esc(loc(p.title))}" aria-label="${esc(loc(p.title))}"></a>`).join("") || `<span class="muted small">${t("side.none")}</span>`}</span>
                   </div>`;
               }).join("")}
             </div>
           </div>
           <div class="side-store">
-            <p>進度只存在這台裝置的瀏覽器裡。換電腦前可以先匯出。</p>
+            <p>${t("side.store")}</p>
             <div class="side-actions">
-              <button type="button" class="btn btn-ghost" data-act="export">${icon("download-simple")}匯出進度</button>
-              <button type="button" class="btn btn-ghost" data-act="import">${icon("upload-simple")}匯入進度</button>
-              <button type="button" class="btn btn-ghost btn-danger" data-act="reset">${icon("trash")}清除進度</button>
+              <button type="button" class="btn btn-ghost" data-act="export">${icon("download-simple")}${t("side.export")}</button>
+              <button type="button" class="btn btn-ghost" data-act="import">${icon("upload-simple")}${t("side.import")}</button>
+              <button type="button" class="btn btn-ghost btn-danger" data-act="reset">${icon("trash")}${t("side.reset")}</button>
             </div>
             <input type="file" id="import-file" accept="application/json,.json" hidden>
           </div>
@@ -308,32 +305,33 @@ function renderHome() {
         if (filters.status === "done" && !store.isSolved(p.id)) return false;
         if (filters.status === "todo" && store.isSolved(p.id)) return false;
         if (!q) return true;
-        return [p.title, f.title, f.concept, ...(p.tags || [])].join(" ").toLowerCase().includes(q);
+        const hay = [p.title, f.title, f.concept, p.tags].flatMap((v) => Object.values(v || {})).flat();
+        return hay.join(" ").toLowerCase().includes(q);
       };
       let n = 0;
-      const blocks = idx.families.map((f) => {
+      familiesEl.innerHTML = idx.families.map((f) => {
         const shown = f.problems.filter((p) => match(p, f));
         if (!shown.length) return "";
         const done = f.problems.filter((p) => store.isSolved(p.id)).length;
         return `
           <article class="family ${animate ? "reveal" : ""}" style="--i:${n++}">
             <header class="family-head">
-              <h2>${esc(f.title)}</h2>
-              <p class="family-concept">${esc(f.concept)}</p>
-              <p class="family-core">${icon("git-branch")}<span>${esc(f.core)}</span></p>
-              <div class="family-meter" aria-label="完成 ${done} / ${f.problems.length}">
+              <h2>${esc(loc(f.title))}</h2>
+              <p class="family-concept">${esc(loc(f.concept))}</p>
+              <p class="family-core">${icon("git-branch")}<span>${esc(loc(f.core))}</span></p>
+              <div class="family-meter">
                 <span class="meter">${f.problems.map((p) => `<i class="${store.isSolved(p.id) ? "is-on" : ""}"></i>`).join("")}</span>
-                <span>${done} / ${f.problems.length} 完成</span>
+                <span>${t("family.meter", { done, total: f.problems.length })}</span>
               </div>
             </header>
             <ol class="ladder">
               ${shown.map((p, j) => `
                 <li class="${animate ? "reveal" : ""}" style="--i:${n + j}">
                   <a class="rung ${store.isSolved(p.id) ? "is-solved" : ""}" href="#/p/${p.id}">
-                    <span class="rung-diff">${bars(DIFF[p.difficulty].level)}${DIFF[p.difficulty].label}</span>
+                    <span class="rung-diff">${bars(LEVEL[p.difficulty])}${diffLabel(p.difficulty)}</span>
                     <span class="rung-main">
-                      <span class="rung-title">${esc(p.title)}</span>
-                      <span class="rung-tags">${(p.tags || []).map(esc).join("、")}</span>
+                      <span class="rung-title">${esc(loc(p.title))}</span>
+                      <span class="rung-tags">${(loc(p.tags) || []).map(esc).join(lang() === "en" ? ", " : "、")}</span>
                     </span>
                     ${rungStatus(p)}
                     ${icon("caret-right", "rung-go")}
@@ -341,19 +339,18 @@ function renderHome() {
                 </li>`).join("")}
             </ol>
           </article>`;
-      }).join("");
-      familiesEl.innerHTML = blocks || `
+      }).join("") || `
         <div class="state-block is-compact">
           ${icon("funnel-x", "state-icon")}
-          <h2>沒有符合條件的題目</h2>
-          <p>換個關鍵字，或清除篩選條件。</p>
-          <button type="button" class="btn btn-ghost" data-act="clear-filters">清除篩選</button>
+          <h2>${t("empty.title")}</h2>
+          <p>${t("empty.text")}</p>
+          <button type="button" class="btn btn-ghost" data-act="clear-filters">${t("empty.clear")}</button>
         </div>`;
     };
 
     const saveFilters = () => store.setPref("filters", { diff: filters.diff, status: filters.status });
-
     app.querySelector("#q").addEventListener("input", (e) => { filters.q = e.target.value; draw(); });
+
     const onClick = (e) => {
       const seg = e.target.closest("[data-filter]");
       if (seg) {
@@ -376,10 +373,10 @@ function renderHome() {
       } else if (act === "import") {
         app.querySelector("#import-file").click();
       } else if (act === "reset") {
-        if (confirm("確定要清除這台裝置上的所有完成紀錄嗎？這個動作無法復原。")) {
+        if (confirm(t("side.resetConfirm"))) {
           store.reset();
           route();
-          toast("已清除進度");
+          toast(t("toast.reset"));
         }
       }
     };
@@ -389,10 +386,10 @@ function renderHome() {
       if (!file) return;
       try {
         store.importJSON(await file.text());
-        toast("已匯入進度");
+        toast(t("toast.imported"));
         route();
-      } catch (err) {
-        toast(`匯入失敗：${err.message}`);
+      } catch {
+        toast(t("toast.importFail"));
       }
     });
     draw(true);
@@ -407,25 +404,30 @@ function renderHome() {
 /* ------------------------------------------------------------------ problem */
 
 function sampleBlock(s, i) {
+  const explain = loc(s.explain);
   return `
     <div class="sample">
       <div class="sample-io">
         <figure>
-          <figcaption>輸入 ${i + 1}<button type="button" class="copy" data-copy="in-${i}" aria-label="複製輸入 ${i + 1}">${icon("copy")}</button></figcaption>
+          <figcaption>${t("p.input", { n: i + 1 })}<button type="button" class="copy" data-copy="in-${i}" aria-label="${t("p.copy")}">${icon("copy")}</button></figcaption>
           <pre id="in-${i}">${esc(s.input)}</pre>
         </figure>
         <figure>
-          <figcaption>輸出 ${i + 1}<button type="button" class="copy" data-copy="out-${i}" aria-label="複製輸出 ${i + 1}">${icon("copy")}</button></figcaption>
+          <figcaption>${t("p.output", { n: i + 1 })}<button type="button" class="copy" data-copy="out-${i}" aria-label="${t("p.copy")}">${icon("copy")}</button></figcaption>
           <pre id="out-${i}">${esc(s.output)}</pre>
         </figure>
       </div>
-      ${s.explain ? `<p class="sample-explain">${esc(s.explain)}</p>` : ""}
+      ${explain ? `<p class="sample-explain">${esc(explain)}</p>` : ""}
     </div>`;
+}
+
+function hintButton(n, total) {
+  return `<button type="button" class="btn btn-ghost" data-act="hint">${icon("lightbulb")}${t(n ? "p.hintMore" : "p.hintFirst", { n, t: total })}</button>`;
 }
 
 function renderProblem(id) {
   app.innerHTML = `<div class="skeleton-problem"><div class="sk sk-line"></div><div class="sk-cols"><div><div class="sk sk-title"></div><div class="sk sk-block tall"></div></div><div class="sk sk-block tall"></div></div></div>`;
-  let panel = null;
+  let workspace = null;
   let disposed = false;
   engine ??= new Engine();
 
@@ -433,17 +435,18 @@ function renderProblem(id) {
     if (disposed) return;
     const family = idx.families.find((f) => f.id === problem.family);
     const siblings = family ? family.problems : [];
-    document.title = `${problem.title} · Pythex`;
-    const revealed = Math.min(store.pref(`hints:${id}`, 0), problem.hints.length);
+    const hints = loc(problem.hints) || [];
+    document.title = `${loc(problem.title)} · Pythex`;
+    const revealed = Math.min(store.pref(`hints:${id}`, 0), hints.length);
 
     app.innerHTML = `
       <div class="pview">
-        <nav class="pnav" aria-label="題目導覽">
-          <a class="back" href="#/">${icon("arrow-left")}題目列表</a>
+        <nav class="pnav" aria-label="${t("p.nav")}">
+          <a class="back" href="#/">${icon("arrow-left")}${t("p.back")}</a>
           <div class="sibs" role="list">
             ${siblings.map((s) => `
               <a role="listitem" class="sib ${s.id === id ? "is-current" : ""}" href="#/p/${s.id}" ${s.id === id ? 'aria-current="page"' : ""}>
-                ${bars(DIFF[s.difficulty].level)}<span>${DIFF[s.difficulty].label}</span>
+                ${bars(LEVEL[s.difficulty])}<span>${diffLabel(s.difficulty)}</span>
                 ${store.isSolved(s.id) ? icon("check-circle", "ph-fill sib-check") : ""}
               </a>`).join("")}
           </div>
@@ -452,35 +455,29 @@ function renderProblem(id) {
         <div class="pgrid">
           <article class="statement">
             <header class="st-head">
-              <p class="st-family">${esc(family?.title || "")}</p>
-              <h1>${esc(problem.title)}</h1>
+              <p class="st-family">${esc(loc(family?.title))}</p>
+              <h1>${esc(loc(problem.title))}</h1>
               <ul class="st-meta">
-                <li>${bars(DIFF[problem.difficulty].level)}${DIFF[problem.difficulty].label}</li>
-                <li>${icon("timer")}時間限制 ${seconds(problem.time_limit_ms)}</li>
-                <li>${icon("list-checks")}範例 ${problem.samples.length} 組、隱藏 ${problem.hidden_count} 組</li>
+                <li>${bars(LEVEL[problem.difficulty])}${diffLabel(problem.difficulty)}</li>
+                <li>${icon("timer")}${t("p.limit", { s: secs(problem.time_limit_ms) })}</li>
+                <li>${icon("list-checks")}${t("p.counts", { a: problem.samples.length, b: problem.hidden_count })}</li>
               </ul>
             </header>
-            <div class="md">${marked.parse(problem.statement)}</div>
+            <div class="md">${marked.parse(loc(problem.statement))}</div>
             <section class="samples">
-              <h2>範例</h2>
+              <h2>${t("p.examples")}</h2>
               ${problem.samples.map(sampleBlock).join("")}
             </section>
-            ${problem.hints.length ? `
+            ${hints.length ? `
             <section class="hints">
-              <h2>提示</h2>
-              <ol class="hint-list">${problem.hints.slice(0, revealed).map((h) => `<li>${esc(h)}</li>`).join("")}</ol>
-              ${revealed < problem.hints.length
-                ? `<button type="button" class="btn btn-ghost" data-act="hint">${icon("lightbulb")}${revealed ? "再看一個提示" : "卡住了？看提示"}（${revealed}/${problem.hints.length}）</button>`
-                : ""}
+              <h2>${t("p.hints")}</h2>
+              <ol class="hint-list">${hints.slice(0, revealed).map((h) => `<li>${esc(h)}</li>`).join("")}</ol>
+              ${revealed < hints.length ? hintButton(revealed, hints.length) : ""}
             </section>` : ""}
           </article>
 
-          <aside class="judge" aria-label="評測">
-            <div class="judge-inner">
-              <div id="engine-line" class="engine-line"></div>
-              <div id="drop-slot"></div>
-              <div id="result"></div>
-            </div>
+          <aside class="workspace" aria-label="${t("ws.aria")}">
+            <div class="ws-inner" id="ws"></div>
           </aside>
         </div>
       </div>`;
@@ -488,418 +485,391 @@ function renderProblem(id) {
     app.querySelector(".statement").addEventListener("click", async (e) => {
       const copy = e.target.closest("[data-copy]");
       if (copy) {
-        const text = document.getElementById(copy.dataset.copy)?.textContent ?? "";
         try {
-          await navigator.clipboard.writeText(text);
-          toast("已複製");
+          await navigator.clipboard.writeText(document.getElementById(copy.dataset.copy)?.textContent ?? "");
+          toast(t("toast.copied"));
         } catch {
-          toast("無法存取剪貼簿，請手動選取");
+          toast(t("toast.noClipboard"));
         }
       }
       if (e.target.closest('[data-act="hint"]')) {
-        const n = Math.min(store.pref(`hints:${id}`, 0) + 1, problem.hints.length);
+        const n = Math.min(store.pref(`hints:${id}`, 0) + 1, hints.length);
         store.setPref(`hints:${id}`, n);
-        const hintsEl = app.querySelector(".hints");
-        hintsEl.querySelector(".hint-list").innerHTML = problem.hints.slice(0, n).map((h) => `<li>${esc(h)}</li>`).join("");
-        const btn = hintsEl.querySelector('[data-act="hint"]');
-        if (n >= problem.hints.length) btn.remove();
-        else btn.innerHTML = `${icon("lightbulb")}再看一個提示（${n}/${problem.hints.length}）`;
-        hintsEl.querySelector(".hint-list li:last-child")?.classList.add("is-new");
+        const box = app.querySelector(".hints");
+        box.querySelector(".hint-list").innerHTML = hints.slice(0, n).map((h) => `<li>${esc(h)}</li>`).join("");
+        box.querySelector(".hint-list li:last-child")?.classList.add("is-new");
+        const btn = box.querySelector('[data-act="hint"]');
+        if (n >= hints.length) btn.remove();
+        else btn.outerHTML = hintButton(n, hints.length);
       }
     });
 
-    panel = new JudgePanel(problem, siblings);
+    workspace = new Workspace(document.getElementById("ws"), problem, siblings);
   }).catch((err) => {
     if (disposed) return;
     app.innerHTML = err.message === "not-found"
-      ? `<section class="state-block">${icon("question", "state-icon")}<h1>找不到這一題</h1><p>題目可能已經改名或移除。</p><a class="btn btn-primary" href="#/">${icon("arrow-left")}回題目列表</a></section>`
+      ? `<section class="state-block">${icon("question", "state-icon")}<h1>${t("p.notFound")}</h1><p>${t("p.notFoundText")}</p><a class="btn btn-primary" href="#/">${icon("arrow-left")}${t("p.backHome")}</a></section>`
       : loadErrorView(err);
   });
 
-  return { destroy() { disposed = true; panel?.destroy(); } };
+  return { destroy() { disposed = true; workspace?.destroy(); } };
 }
 
-/* ------------------------------------------------------------------ judge panel */
+/* ------------------------------------------------------------------ workspace: editor + judge */
 
-class JudgePanel {
-  constructor(problem, siblings) {
+class Workspace {
+  constructor(root, problem, siblings) {
+    this.root = root;
     this.problem = problem;
     this.siblings = siblings;
     this.cases = buildCases(problem);
-    this.file = null; // { name, code, handle, lastModified }
     this.runId = 0;
     this.running = false;
-    this.watch = Boolean(store.pref("watch", false));
-    this.engineLine = document.getElementById("engine-line");
-    this.dropSlot = document.getElementById("drop-slot");
-    this.resultEl = document.getElementById("result");
-    this.dragDepth = 0;
+    this.saveTimer = null;
+    this.pendingCode = null;
+    this.lastCode = "";
+
+    const kbd = IS_MAC ? "⌘ ↵" : "Ctrl ↵";
+    root.innerHTML = `
+      <div id="engine-line" class="engine-line"></div>
+      <div class="ws-editor">
+        <div class="ws-bar">
+          <span class="ws-file">${icon("file-py")}main.py</span>
+          <span class="ws-saved" id="ws-saved" aria-live="polite"></span>
+          <button type="button" class="ws-reset" data-act="reset">${icon("arrow-counter-clockwise")}${t("ws.reset")}</button>
+        </div>
+        <div id="editor-host"></div>
+      </div>
+      <div class="ws-actions">
+        <button type="button" class="btn btn-ghost" data-act="run-samples">${icon("play")}${t("ws.runSamples")}</button>
+        <button type="button" class="btn btn-primary" data-act="submit">${icon("paper-plane-tilt")}${t("ws.submit")}<kbd>${kbd}</kbd></button>
+      </div>
+      <div class="ws-tabs" role="tablist">
+        <button type="button" role="tab" id="tab-result" aria-controls="panel-result" aria-selected="true" data-tab="result">${t("ws.tabResult")}</button>
+        <button type="button" role="tab" id="tab-custom" aria-controls="panel-custom" aria-selected="false" data-tab="custom">${t("ws.tabCustom")}</button>
+      </div>
+      <div id="panel-result" role="tabpanel" aria-labelledby="tab-result">
+        <div class="ws-empty">${icon("terminal-window", "state-icon")}<b>${t("ws.emptyTitle")}</b><p>${t("ws.emptyText")}</p></div>
+      </div>
+      <div id="panel-custom" role="tabpanel" aria-labelledby="tab-custom" hidden>
+        <p class="ws-note">${t("ws.customHint")}</p>
+        <label for="custom-in" class="field-label">${t("ws.customInput")}</label>
+        <textarea id="custom-in" class="custom-in" spellcheck="false" wrap="off">${esc(problem.samples[0]?.input ?? "")}</textarea>
+        <div><button type="button" class="btn btn-ghost" data-act="custom-run">${icon("play")}${t("ws.customRun")}</button></div>
+        <div id="custom-out"></div>
+      </div>`;
+
+    this.engineLine = root.querySelector("#engine-line");
+    this.resultEl = root.querySelector("#panel-result");
+    this.customEl = root.querySelector("#panel-custom");
+    this.savedEl = root.querySelector("#ws-saved");
+
+    this.editor = new CodeEditor(root.querySelector("#editor-host"), {
+      value: store.draft(problem.id) ?? t("starter"),
+      label: t("ws.editor"),
+      help: t("ws.help"),
+      onChange: (code) => this.scheduleSave(code),
+      onSubmit: () => this.run("submit"),
+    });
 
     this.offStatus = engine.onStatus((state, detail) => this.renderEngine(state, detail));
-    this.renderDrop();
-
-    this.overlay = document.createElement("div");
-    this.overlay.className = "drop-overlay";
-    this.overlay.innerHTML = `<div class="drop-overlay-box">${icon("file-py")}<p>放開即可檢查</p></div>`;
-    document.body.appendChild(this.overlay);
-
-    this.onDragEnter = (e) => {
-      if (!hasFiles(e)) return;
-      this.dragDepth += 1;
-      this.overlay.classList.add("is-active");
-    };
-    this.onDragLeave = (e) => {
-      if (!hasFiles(e)) return;
-      this.dragDepth = Math.max(0, this.dragDepth - 1);
-      if (!this.dragDepth) this.overlay.classList.remove("is-active");
-    };
-    this.onDrop = (e) => {
-      e.preventDefault();
-      this.dragDepth = 0;
-      this.overlay.classList.remove("is-active");
-      this.acceptDrop(e.dataTransfer);
+    this.onClick = (e) => {
+      const btn = e.target.closest("[data-act], [data-tab]");
+      if (!btn) {
+        const head = e.target.closest(".case-head");
+        if (head && !head.disabled) {
+          const open = head.getAttribute("aria-expanded") === "true";
+          head.setAttribute("aria-expanded", String(!open));
+          head.nextElementSibling.hidden = open;
+        }
+        return;
+      }
+      if (btn.dataset.tab) {
+        this.showTab(btn.dataset.tab);
+        return;
+      }
+      const act = btn.dataset.act;
+      if (act === "submit") this.run("submit");
+      else if (act === "run-samples") this.run("samples");
+      else if (act === "custom-run") this.runCustom();
+      else if (act === "retry-engine") engine.retry();
+      else if (act === "goto") this.editor.goToLine(Number(btn.dataset.line));
+      else if (act === "reset" && confirm(t("ws.resetConfirm"))) {
+        this.editor.setValue(t("starter"));
+        store.clearDraft(this.problem.id);
+        this.pendingCode = null;
+        this.editor.focus();
+      }
     };
     this.onKey = (e) => {
-      if (e.key !== "r" || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.target.closest("input, textarea, [contenteditable]")) return;
-      if (this.file) { e.preventDefault(); this.recheck(); }
-    };
-    this.onClick = (e) => {
-      const act = e.target.closest("[data-act]")?.dataset.act;
-      if (act === "pick") this.pick();
-      else if (act === "recheck") this.recheck();
-      else if (act === "retry-engine") engine.retry();
-      const head = e.target.closest(".case-head");
-      if (head) {
-        const body = head.nextElementSibling;
-        const open = head.getAttribute("aria-expanded") === "true";
-        head.setAttribute("aria-expanded", String(!open));
-        body.hidden = open;
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !e.defaultPrevented) {
+        e.preventDefault();
+        this.run("submit");
       }
     };
-    this.onChange = (e) => {
-      if (e.target.id === "file-input" && e.target.files[0]) {
-        this.loadFile(e.target.files[0], null);
-        e.target.value = "";
-      }
-      if (e.target.id === "watch-toggle") {
-        this.watch = e.target.checked;
-        store.setPref("watch", this.watch);
-        this.setupWatch();
-      }
-    };
-    document.addEventListener("dragenter", this.onDragEnter);
-    document.addEventListener("dragleave", this.onDragLeave);
-    document.addEventListener("drop", this.onDrop);
+    root.addEventListener("click", this.onClick);
     document.addEventListener("keydown", this.onKey);
-    this.root = document.querySelector(".judge");
-    this.root.addEventListener("click", this.onClick);
-    this.root.addEventListener("change", this.onChange);
   }
 
   destroy() {
     this.runId += 1;
+    this.flushSave();
     this.offStatus();
-    clearInterval(this.watchTimer);
-    this.overlay.remove();
-    document.removeEventListener("dragenter", this.onDragEnter);
-    document.removeEventListener("dragleave", this.onDragLeave);
-    document.removeEventListener("drop", this.onDrop);
+    this.root.removeEventListener("click", this.onClick);
     document.removeEventListener("keydown", this.onKey);
   }
 
+  scheduleSave(code) {
+    clearTimeout(this.saveTimer);
+    this.pendingCode = code;
+    this.saveTimer = setTimeout(() => this.flushSave(), 400);
+  }
+
+  flushSave() {
+    clearTimeout(this.saveTimer);
+    if (this.pendingCode == null) return;
+    if (store.saveDraft(this.problem.id, this.pendingCode)) {
+      this.savedEl.textContent = t("ws.saved");
+      clearTimeout(this.savedTimer);
+      this.savedTimer = setTimeout(() => { this.savedEl.textContent = ""; }, 1500);
+    }
+    this.pendingCode = null;
+  }
+
+  showTab(name) {
+    this.root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    this.resultEl.hidden = name !== "result";
+    this.customEl.hidden = name !== "custom";
+  }
+
+  setBusy(busy) {
+    this.running = busy;
+    this.root.querySelectorAll('[data-act="submit"], [data-act="run-samples"], [data-act="custom-run"]').forEach((b) => { b.disabled = busy; });
+  }
+
   renderEngine(state, detail) {
-    if (!this.engineLine) return;
     const map = {
-      loading: `<span class="load-track" aria-hidden="true"><span></span></span>正在載入 Python 執行環境（第一次約需 5 到 15 秒）`,
-      ready: `<span class="live-dot" aria-hidden="true"></span>${esc(detail)} 已就緒，程式只在這台電腦上執行`,
-      error: `${icon("warning")}無法載入 Python 執行環境，請檢查網路連線 <button type="button" class="link-btn" data-act="retry-engine">重試</button>`,
+      loading: `<span class="load-track" aria-hidden="true"><span></span></span>${t("eng.loading")}`,
+      ready: `<span class="live-dot" aria-hidden="true"></span>${esc(t("eng.ready", { v: detail }))}`,
+      error: `${icon("warning")}${t("eng.error")} <button type="button" class="link-btn" data-act="retry-engine">${t("eng.retry")}</button>`,
       idle: "",
     };
     this.engineLine.dataset.state = state;
     this.engineLine.innerHTML = map[state] ?? "";
   }
 
-  renderDrop() {
-    if (!this.file) {
-      this.dropSlot.innerHTML = `
-        <button type="button" class="dropzone" data-act="pick">
-          ${icon("file-py", "dropzone-icon")}
-          <strong>把 .py 檔拖到這裡</strong>
-          <span>或點一下選擇檔案。也可以直接拖到頁面任何地方。</span>
-        </button>
-        <input type="file" id="file-input" accept=".py" hidden>`;
-      return;
-    }
-    const f = this.file;
-    const lines = f.code.split("\n").length;
-    const time = new Date(f.loadedAt).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    this.dropSlot.innerHTML = `
-      <div class="filebar">
-        ${icon("file-py", "filebar-icon")}
-        <div class="filebar-name">
-          <strong title="${esc(f.name)}">${esc(f.name)}</strong>
-          <span>${lines} 行，讀取於 ${time}</span>
-        </div>
-        <div class="filebar-actions">
-          <button type="button" class="btn btn-primary" data-act="recheck" ${this.running ? "disabled" : ""}>
-            ${icon("arrow-clockwise")}${f.handle ? "重新檢查" : "再跑一次"}<kbd>R</kbd>
-          </button>
-          <button type="button" class="btn btn-ghost" data-act="pick">換檔案</button>
-        </div>
-        ${f.handle
-          ? `<label class="watch"><input type="checkbox" id="watch-toggle" ${this.watch ? "checked" : ""}>存檔後自動重新檢查</label>`
-          : `<p class="filebar-note">這個瀏覽器無法重新讀取檔案。修改程式後，請把檔案再拖進來一次。</p>`}
-        <input type="file" id="file-input" accept=".py" hidden>
-      </div>`;
+  code() {
+    return this.editor.value.replace(/\r\n?/g, "\n");
   }
 
-  async pick() {
-    if (supportsHandlePicker()) {
-      try {
-        const [handle] = await window.showOpenFilePicker({
-          types: [{ description: "Python 程式", accept: { "text/x-python": [".py"] } }],
-          excludeAcceptAllOption: false,
-        });
-        await this.loadFile(await handle.getFile(), handle);
-      } catch (err) {
-        if (err.name !== "AbortError") toast(`無法開啟檔案：${err.message}`);
-      }
-      return;
-    }
-    this.dropSlot.querySelector("#file-input")?.click();
-  }
+  /* -------------------------------------------------- judge */
 
-  async acceptDrop(dt) {
-    const item = [...(dt.items || [])].find((it) => it.kind === "file");
-    // getAsFileSystemHandle must be called synchronously inside the drop event
-    const handlePromise = item?.getAsFileSystemHandle ? item.getAsFileSystemHandle().catch(() => null) : Promise.resolve(null);
-    const file = item ? item.getAsFile() : dt.files[0];
-    if (!file) return;
-    const handle = await handlePromise;
-    await this.loadFile(file, handle?.kind === "file" ? handle : null);
-  }
-
-  async loadFile(file, handle) {
-    if (!/\.py$/i.test(file.name)) {
-      toast("請放入 .py 檔案");
-      return;
-    }
-    if (file.size > MAX_FILE_BYTES) {
-      toast("檔案太大了，請確認是不是放錯檔案");
-      return;
-    }
-    const code = (await file.text()).replace(/^﻿/, "").replace(/\r\n?/g, "\n");
-    this.file = { name: file.name, code, handle, lastModified: file.lastModified, loadedAt: Date.now() };
-    this.setupWatch();
-    this.run();
-  }
-
-  async recheck() {
-    if (!this.file || this.running) return;
-    if (this.file.handle) {
-      try {
-        const file = await this.file.handle.getFile();
-        await this.loadFile(file, this.file.handle);
-        return;
-      } catch {
-        toast("無法重新讀取檔案，改用上次讀到的內容");
-      }
-    }
-    this.file.loadedAt = Date.now();
-    this.run();
-  }
-
-  setupWatch() {
-    clearInterval(this.watchTimer);
-    if (!this.watch || !this.file?.handle) return;
-    this.watchTimer = setInterval(async () => {
-      if (this.running || !this.file?.handle) return;
-      try {
-        const f = await this.file.handle.getFile();
-        if (f.lastModified !== this.file.lastModified) this.loadFile(f, this.file.handle);
-      } catch {
-        clearInterval(this.watchTimer);
-      }
-    }, 1000);
-  }
-
-  /* -------------------------------------------------- run */
-
-  async run() {
+  async run(mode) {
+    if (this.running) return;
+    this.flushSave();
     const myRun = ++this.runId;
-    this.running = true;
-    this.renderDrop();
-    const { problem, cases } = this;
-    const code = this.file.code;
+    this.setBusy(true);
+    this.showTab("result");
+    this.editor.setErrorLine(null);
+    const code = this.code();
+    this.lastCode = code;
+    const cases = mode === "samples" ? this.cases.filter((c) => !c.hidden) : this.cases;
     const results = new Map();
 
     this.resultEl.innerHTML = `
       <section class="verdict is-running" aria-live="polite">
         <span class="verdict-badge"><span class="pulse-ring"></span></span>
-        <div class="verdict-text"><strong id="run-title">${engine.state === "ready" ? "編譯中" : "等待 Python 執行環境"}</strong><span id="run-sub">共 ${cases.length} 組測資</span></div>
+        <div class="verdict-text"><strong id="run-title">${engine.state === "ready" ? t("run.compiling") : t("run.waiting")}</strong><span>${t("run.total", { n: cases.length })}</span></div>
       </section>
-      <ol class="cases" id="cases">${cases.map((tc) => this.caseRow(tc, { verdict: "WAIT" })).join("")}</ol>`;
+      <ol class="cases">${cases.map((tc) => this.caseRow(tc, { verdict: "WAIT" })).join("")}</ol>`;
 
     let outcome;
     try {
-      outcome = await judge(engine, problem, cases, code, {
-      isCancelled: () => myRun !== this.runId,
-      onUpdate: (key, r) => {
-        if (myRun !== this.runId) return;
-        results.set(key, r);
-        const tc = cases.find((c) => c.key === key);
-        const row = this.resultEl.querySelector(`[data-key="${key}"]`);
-        if (row) row.outerHTML = this.caseRow(tc, r);
-        const done = [...results.values()].filter((x) => x.verdict !== "RUN").length;
-        const title = this.resultEl.querySelector("#run-title");
-        if (title) title.textContent = `評測中 ${done} / ${cases.length}`;
-      },
+      outcome = await judge(engine, this.problem, cases, code, {
+        isCancelled: () => myRun !== this.runId,
+        onUpdate: (key, r) => {
+          if (myRun !== this.runId) return;
+          results.set(key, r);
+          const row = this.resultEl.querySelector(`[data-key="${key}"]`);
+          if (row) row.outerHTML = this.caseRow(cases.find((c) => c.key === key), r);
+          const done = [...results.values()].filter((x) => x.verdict !== "RUN").length;
+          const title = this.resultEl.querySelector("#run-title");
+          if (title) title.textContent = t("run.progress", { d: done, n: cases.length });
+        },
       });
     } catch (err) {
-      outcome = { verdict: "SE", systemError: `Python 執行環境無法載入：${err.message}`, results: [] };
+      outcome = { verdict: "SE", systemError: t("out.seLoad", { msg: err.message }), results: [] };
     }
     if (myRun !== this.runId || !outcome) return;
-    this.running = false;
-    this.renderDrop();
-    if (outcome.verdict === "SE") {
-      this.resultEl.innerHTML = `
-        <section class="verdict v-se" aria-live="polite">
-          <span class="verdict-badge">${icon(VERDICT.SE.icon)}</span>
-          <div class="verdict-text"><strong>${VERDICT.SE.label}</strong><span>${esc(outcome.systemError)}</span></div>
-        </section>`;
-      return;
-    }
-    this.renderOutcome(outcome);
+    this.setBusy(false);
+    this.renderOutcome(outcome, mode, cases, code);
   }
 
   caseRow(tc, r) {
-    const v = VERDICT[r.verdict];
-    const label = tc.hidden ? tc.label : "公開範例";
+    const label = tc.hidden ? loc(tc.label) : t("case.public");
     const expandable = !["WAIT", "RUN", "SK"].includes(r.verdict);
+    const mark = r.verdict === "RUN" ? `<span class="pulse-dot"></span>` : icon(VERDICT_ICON[r.verdict], r.verdict === "AC" ? "ph-fill" : "");
     return `
       <li class="case" data-key="${tc.key}" data-v="${r.verdict.toLowerCase()}">
         <button type="button" class="case-head" aria-expanded="false" ${expandable ? "" : "disabled"}>
-          <span class="case-icon">${r.verdict === "RUN" ? `<span class="pulse-dot"></span>` : icon(v.icon, r.verdict === "AC" ? "ph-fill" : "")}</span>
-          <span class="case-name">${tc.name}</span>
-          <span class="case-label">${esc(label)}${tc.hidden && tc.kind && tc.kind !== "normal" ? `<em class="kind kind-${tc.kind}">${KIND[tc.kind]}</em>` : ""}</span>
+          <span class="case-icon">${mark}</span>
+          <span class="case-name">${esc(tc.name)}</span>
+          <span class="case-label">${esc(label)}${tc.hidden && tc.kind && tc.kind !== "normal" ? `<em class="kind">${t(`kind.${tc.kind}`)}</em>` : ""}</span>
           <span class="case-time">${r.time != null && r.verdict !== "TLE" ? ms(r.time) : ""}</span>
-          <span class="case-verdict">${v.label}</span>
+          <span class="case-verdict">${vLabel(r.verdict)}</span>
         </button>
-        <div class="case-body" hidden>${expandable ? this.caseDetail(tc, r) : ""}</div>
+        <div class="case-body" hidden>${expandable ? this.caseDetail(tc, r, this.lastCode) : ""}</div>
       </li>`;
   }
 
-  caseDetail(tc, r) {
+  caseDetail(tc, r, code) {
     const parts = [];
-    if (tc.hidden) {
-      parts.push(`<p class="hidden-note">${icon("eye-slash")}隱藏測資不公開資料，只提供描述：<b>${esc(tc.label)}</b></p>`);
-    } else {
-      parts.push(ioBlock("輸入", tc.input));
-    }
+    if (tc.hidden) parts.push(`<p class="hidden-note">${icon("eye-slash")}<span>${t("dx.hiddenNote")} <b>${esc(loc(tc.label))}</b></span></p>`);
+    else parts.push(ioBlock(t("io.input"), tc.input));
 
+    const hint = loc(tc.hint);
     if (r.verdict === "AC") {
-      if (!tc.hidden) parts.push(ioBlock("你的輸出", r.stdout));
+      if (!tc.hidden) parts.push(ioBlock(t("io.yours"), r.stdout));
     } else if (r.verdict === "WA") {
-      const { findings, firstDiff } = diagnoseWrongAnswer(tc.output, r.stdout, this.file.code, { reveal: !tc.hidden });
+      const { findings, firstDiff } = diagnoseWrongAnswer(tc.output, r.stdout, code, { reveal: !tc.hidden });
       parts.push(findingsBlock(findings));
-      if (tc.hidden && tc.hint) parts.push(hintBlock(tc.hint));
+      if (tc.hidden && hint) parts.push(hintBlock(hint));
       if (!tc.hidden) parts.push(diffBlock(tc.output, r.stdout, firstDiff, r.truncated));
     } else if (r.verdict === "RE") {
-      const ex = explainError(r.error, this.file.code);
-      parts.push(errorBlock(ex, r.error, this.file.code));
-      if (tc.hidden && tc.hint) parts.push(hintBlock(tc.hint));
-      if (!tc.hidden && r.stdout) parts.push(ioBlock("出錯前的輸出", r.stdout));
+      parts.push(errorBlock(explainError(r.error, code), r.error, code));
+      if (tc.hidden && hint) parts.push(hintBlock(hint));
+      if (!tc.hidden && r.stdout) parts.push(ioBlock(t("io.before"), r.stdout));
     } else if (r.verdict === "TLE") {
       const ex = explainTimeout(tc, this.problem.time_limit_ms);
       parts.push(findingsBlock([{ title: ex.title, detail: ex.detail }], ex.tips));
-      if (tc.hidden && tc.hint) parts.push(hintBlock(tc.hint));
+      if (tc.hidden && hint) parts.push(hintBlock(hint));
     }
     if (r.stderr && r.verdict !== "RE") {
-      parts.push(`<details class="stderr"><summary>stderr 輸出（不列入評分）</summary><pre>${esc(r.stderr)}</pre></details>`);
+      parts.push(`<details class="stderr"><summary>${t("io.stderr")}</summary><pre>${esc(r.stderr)}</pre></details>`);
     }
     return parts.join("");
   }
 
-  renderOutcome(outcome) {
-    const { problem, cases } = this;
+  renderOutcome(outcome, mode, cases, code) {
+    if (outcome.verdict === "SE") {
+      this.resultEl.innerHTML = `
+        <section class="verdict v-se" aria-live="polite">
+          <span class="verdict-badge">${icon(VERDICT_ICON.SE)}</span>
+          <div class="verdict-text"><strong>${vLabel("SE")}</strong><span>${esc(outcome.systemError || t("out.se"))}</span></div>
+        </section>`;
+      return;
+    }
+
+    const { problem } = this;
     const total = cases.length;
     const passed = outcome.results.filter((r) => r.verdict === "AC").length;
     const slowest = Math.max(0, ...outcome.results.filter((r) => r.verdict === "AC").map((r) => r.time || 0));
-    const firstSolve = store.record(problem.id, { verdict: outcome.verdict, passed, total });
+    const submit = mode === "submit";
+    const firstSolve = submit ? store.record(problem.id, { verdict: outcome.verdict, passed, total }) : false;
 
-    const v = VERDICT[outcome.verdict];
-    let sub = `通過 ${passed} / ${total} 組`;
-    if (outcome.verdict === "AC") sub += `，最慢 ${ms(slowest)}`;
-    if (outcome.verdict === "CE") sub = "程式沒有執行，請先修正語法";
-    if (outcome.verdict === "SE") sub = outcome.systemError || "請重新整理頁面再試一次";
+    let title = vLabel(outcome.verdict);
+    let sub = t("out.passed", { p: passed, t: total });
+    if (outcome.verdict === "AC") {
+      title = submit ? (firstSolve ? t("out.firstSolve") : t("out.allPass")) : t("out.samplesPass");
+      sub = submit ? sub + t("out.slowest", { ms: ms(slowest) }) : t("out.samplesSub", { p: passed, t: total });
+    }
+    if (outcome.verdict === "CE") sub = t("out.ce");
 
     let next = "";
-    if (outcome.verdict === "AC") {
-      const idx = this.siblings.findIndex((s) => s.id === problem.id);
-      const target = this.siblings.slice(idx + 1).find((s) => !store.isSolved(s.id)) || this.siblings.find((s) => !store.isSolved(s.id));
-      if (target) next = `<a class="btn btn-primary next-btn" href="#/p/${target.id}">下一題：${DIFF[target.difficulty].label}・${esc(target.title)}${icon("arrow-right")}</a>`;
-      else next = `<a class="btn btn-ghost next-btn" href="#/">這個主題全部完成，回題目列表${icon("arrow-right")}</a>`;
+    if (outcome.verdict === "AC" && submit) {
+      const i = this.siblings.findIndex((s) => s.id === problem.id);
+      const target = this.siblings.slice(i + 1).find((s) => !store.isSolved(s.id)) || this.siblings.find((s) => !store.isSolved(s.id));
+      next = target
+        ? `<a class="btn btn-primary next-btn" href="#/p/${target.id}">${esc(t("out.next", { d: diffLabel(target.difficulty), title: loc(target.title) }))}${icon("arrow-right")}</a>`
+        : `<a class="btn btn-ghost next-btn" href="#/">${t("out.familyDone")}${icon("arrow-right")}</a>`;
     }
 
-    // Diagnosis for the first failing case
     let diagnosis = "";
-    const failing = outcome.results.find((r) => !["AC", "SK"].includes(r.verdict));
     let errorLine = null;
+    const failing = outcome.results.find((r) => !["AC", "SK"].includes(r.verdict));
     if (outcome.verdict === "CE") {
-      const ex = explainError(outcome.compileError, this.file.code);
       errorLine = outcome.compileError.line;
-      diagnosis = `<section class="diagnosis"><h3>${icon("stethoscope")}問題出在哪</h3>${errorBlock(ex, outcome.compileError, this.file.code)}</section>`;
+      diagnosis = `<section class="diagnosis"><h3>${icon("stethoscope")}${t("dx.title")}</h3>${errorBlock(explainError(outcome.compileError, code), outcome.compileError, code)}</section>`;
     } else if (failing) {
       const tc = cases.find((c) => c.key === failing.key);
       if (failing.verdict === "RE") errorLine = failing.error?.line ?? null;
+      const sep = lang() === "en" ? ": " : "：";
       diagnosis = `
         <section class="diagnosis">
-          <h3>${icon("stethoscope")}從${tc.name} 開始出錯${tc.hidden ? `：${esc(tc.label)}` : ""}</h3>
-          ${this.caseDetail(tc, failing)}
+          <h3>${icon("stethoscope")}<span>${esc(t("dx.from", { name: tc.name }))}${tc.hidden ? `${sep}${esc(loc(tc.label))}` : ""}</span></h3>
+          ${this.caseDetail(tc, failing, code)}
         </section>`;
     }
+    if (errorLine) this.editor.setErrorLine(errorLine);
 
     this.resultEl.innerHTML = `
       <section class="verdict v-${outcome.verdict.toLowerCase()} ${firstSolve ? "is-first" : ""}" aria-live="polite">
-        <span class="verdict-badge">${icon(v.icon, outcome.verdict === "AC" ? "ph-fill" : "")}</span>
-        <div class="verdict-text">
-          <strong>${outcome.verdict === "AC" ? (firstSolve ? "第一次就全部通過了" : "全部通過") : v.label}</strong>
-          <span>${sub}</span>
-        </div>
+        <span class="verdict-badge">${icon(VERDICT_ICON[outcome.verdict], outcome.verdict === "AC" ? "ph-fill" : "")}</span>
+        <div class="verdict-text"><strong>${esc(title)}</strong><span>${esc(sub)}</span></div>
         ${next}
       </section>
       ${diagnosis}
-      ${outcome.results.length ? `<ol class="cases is-revealing">${cases.map((tc, i) => this.caseRow(tc, outcome.results.find((r) => r.key === tc.key) || { verdict: "SK" }).replace('<li class="case"', `<li style="--i:${i}" class="case`)).join("")}</ol>` : ""}
-      ${codeView(this.file, errorLine, outcome)}`;
-
-    if (errorLine) this.resultEl.querySelector(".code-line.is-error")?.scrollIntoView({ block: "nearest" });
+      ${outcome.results.length ? `<ol class="cases is-revealing">${cases.map((tc, i) => this.caseRow(tc, outcome.results.find((r) => r.key === tc.key) || { verdict: "SK" }).replace('<li class="case"', `<li style="--i:${i}" class="case`)).join("")}</ol>` : ""}`;
   }
-}
 
-function hasFiles(e) {
-  return [...(e.dataTransfer?.types || [])].includes("Files");
-}
+  /* -------------------------------------------------- custom input */
 
-function supportsHandlePicker() {
-  return typeof window.showOpenFilePicker === "function" && window.isSecureContext;
+  async runCustom() {
+    if (this.running) return;
+    this.flushSave();
+    const out = this.customEl.querySelector("#custom-out");
+    let input = this.customEl.querySelector("#custom-in").value.replace(/\r\n?/g, "\n");
+    if (input && !input.endsWith("\n")) input += "\n";
+    const code = this.code();
+    const limit = this.problem.time_limit_ms;
+    this.setBusy(true);
+    this.editor.setErrorLine(null);
+    out.innerHTML = `<p class="engine-line"><span class="load-track" aria-hidden="true"><span></span></span>${engine.state === "ready" ? t("run.compiling") : t("run.waiting")}</p>`;
+    try {
+      const compiled = await engine.compile(code);
+      if (!compiled.ok) {
+        this.editor.setErrorLine(compiled.error?.line);
+        out.innerHTML = errorBlock(explainError(compiled.error, code), compiled.error, code);
+        return;
+      }
+      const res = await engine.run(code, input, limit + Math.max(1500, limit * 0.75));
+      if (res.timeout || res.time > limit) {
+        const ex = explainTimeout(null, limit);
+        out.innerHTML = findingsBlock([{ title: ex.title, detail: ex.detail }], ex.tips);
+        return;
+      }
+      const parts = [ioBlock(`${t("ws.customOutput")} <span class="muted">${ms(res.time)}</span>`, res.stdout)];
+      if (res.error || res.fatal) {
+        const err = res.error || { type: "RuntimeCrash", message: res.message, line: null };
+        if (err.line) this.editor.setErrorLine(err.line);
+        parts.push(errorBlock(explainError(err, code), err, code));
+      } else if (res.stderr) {
+        parts.push(`<details class="stderr" open><summary>${t("io.stderr")}</summary><pre>${esc(res.stderr)}</pre></details>`);
+      }
+      out.innerHTML = parts.join("");
+    } catch (err) {
+      out.innerHTML = `<p class="muted">${esc(t("out.seLoad", { msg: err.message }))}</p>`;
+    } finally {
+      this.setBusy(false);
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ result blocks */
 
 function ioBlock(title, text) {
-  const t = String(text ?? "");
-  const lines = t.split("\n");
-  const shown = lines.length > MAX_SHOW_LINES ? lines.slice(0, MAX_SHOW_LINES).join("\n") + `\n…（還有 ${lines.length - MAX_SHOW_LINES} 行）` : t;
-  return `<figure class="io"><figcaption>${title}</figcaption><pre>${t ? esc(shown) : '<span class="muted">（沒有輸出）</span>'}</pre></figure>`;
+  const s = String(text ?? "");
+  const lines = s.split("\n");
+  const shown = lines.length > MAX_SHOW_LINES
+    ? `${lines.slice(0, MAX_SHOW_LINES).join("\n")}\n${t("io.more", { n: lines.length - MAX_SHOW_LINES })}`
+    : s;
+  return `<figure class="io"><figcaption>${title}</figcaption><pre>${s ? esc(shown) : `<span class="muted">${t("io.none")}</span>`}</pre></figure>`;
 }
 
 function findingsBlock(findings, tips = []) {
   return `
-    <ul class="findings">
-      ${findings.map((f) => `<li><b>${esc(f.title)}</b><span>${esc(f.detail)}</span></li>`).join("")}
-    </ul>
-    ${tips.length ? `<ul class="tips">${tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}`;
+    <ul class="findings">${findings.map((f) => `<li><b>${esc(f.title)}</b><span>${esc(f.detail)}</span></li>`).join("")}</ul>
+    ${tips.length ? `<ul class="tips">${tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}`;
 }
 
 function hintBlock(hint) {
@@ -908,14 +878,12 @@ function hintBlock(hint) {
 
 function errorBlock(ex, error, code) {
   const line = error?.line;
-  const srcLines = code.split("\n");
+  const src = code.split("\n");
   let excerpt = "";
-  if (line && line <= srcLines.length) {
+  if (line && line <= src.length) {
     const hl = highlightPython(code);
-    const from = Math.max(1, line - 2);
-    const to = Math.min(srcLines.length, line + 1);
     const rows = [];
-    for (let n = from; n <= to; n++) {
+    for (let n = Math.max(1, line - 2); n <= Math.min(src.length, line + 1); n++) {
       rows.push(`<div class="code-line ${n === line ? "is-error" : ""}"><span class="ln">${n}</span><span class="src">${hl[n - 1] || " "}</span></div>`);
       if (n === line && error.col && ["SyntaxError", "IndentationError", "TabError"].includes(error.type)) {
         rows.push(`<div class="code-line caret"><span class="ln"></span><span class="src">${" ".repeat(Math.max(0, error.col - 1))}^</span></div>`);
@@ -925,11 +893,11 @@ function errorBlock(ex, error, code) {
   }
   return `
     <div class="error-explain">
-      <p class="error-title"><b>${esc(ex.title)}</b>${line ? `<span>第 ${line} 行</span>` : ""}<code>${esc(ex.type)}${ex.message ? `: ${esc(ex.message)}` : ""}</code></p>
+      <p class="error-title"><b>${esc(ex.title)}</b>${line ? `<button type="button" class="line-link" data-act="goto" data-line="${line}" title="${esc(t("io.jump", { n: line }))}">${t("io.line", { n: line })}${icon("arrow-square-out")}</button>` : ""}<code>${esc(ex.type)}${ex.message ? `: ${esc(ex.message)}` : ""}</code></p>
       ${ex.detail ? `<p>${esc(ex.detail)}</p>` : ""}
       ${excerpt}
-      ${ex.tips.length ? `<ul class="tips">${ex.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-      ${error?.traceback ? `<details class="traceback"><summary>完整錯誤訊息</summary><pre>${esc(error.traceback)}</pre></details>` : ""}
+      ${ex.tips.length ? `<ul class="tips">${ex.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${error?.traceback ? `<details class="traceback"><summary>${t("io.traceback")}</summary><pre>${esc(error.traceback)}</pre></details>` : ""}
     </div>`;
 }
 
@@ -943,46 +911,30 @@ function diffBlock(expected, got, firstDiff, truncated) {
     const rows = [];
     for (let i = 0; i < n; i++) {
       const bad = arr[i] !== other[i];
-      rows.push(`<div class="diff-line ${bad ? "is-diff" : ""} ${i === firstDiff ? "is-first" : ""}"><span class="ln">${i + 1}</span><span class="src">${arr[i] === undefined ? '<span class="muted">（沒有這一行）</span>' : esc(arr[i]) || " "}</span></div>`);
+      const text = arr[i] === undefined ? `<span class="muted">${t("io.missing")}</span>` : esc(arr[i]) || " ";
+      rows.push(`<div class="diff-line ${bad ? "is-diff" : ""} ${i === firstDiff ? "is-first" : ""}"><span class="ln">${i + 1}</span><span class="src">${text}</span></div>`);
     }
     return rows.join("");
   };
-  const more = Math.max(eL.length, oL.length) > n ? `<p class="muted small">只顯示前 ${MAX_SHOW_LINES} 行。</p>` : "";
+  const more = Math.max(eL.length, oL.length) > n ? `<p class="muted small">${t("io.firstN", { n: MAX_SHOW_LINES })}</p>` : "";
   return `
     <div class="diff">
-      <figure><figcaption>預期輸出</figcaption><div class="code">${col(eL, oL)}</div></figure>
-      <figure><figcaption>你的輸出${truncated ? "（太長，已截斷）" : ""}</figcaption><div class="code">${col(oL, eL)}</div></figure>
+      <figure><figcaption>${t("io.expected")}</figcaption><div class="code">${col(eL, oL)}</div></figure>
+      <figure><figcaption>${t("io.yours")}${truncated ? t("io.truncated") : ""}</figcaption><div class="code">${col(oL, eL)}</div></figure>
     </div>${more}`;
-}
-
-function codeView(file, errorLine, outcome) {
-  const hl = highlightPython(file.code);
-  const open = outcome.verdict === "CE" || outcome.verdict === "RE";
-  return `
-    <details class="codeview" ${open ? "open" : ""}>
-      <summary>${icon("code")}${esc(file.name)}<span class="muted">${hl.length} 行</span></summary>
-      <div class="code">${hl.map((h, i) => `<div class="code-line ${i + 1 === errorLine ? "is-error" : ""}"><span class="ln">${i + 1}</span><span class="src">${h || " "}</span></div>`).join("")}</div>
-    </details>`;
 }
 
 /* ------------------------------------------------------------------ router */
 
-// Never let the browser navigate away when a file is dropped outside a drop zone.
-window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
-window.addEventListener("drop", (e) => {
-  if (!hasFiles(e)) return;
-  e.preventDefault();
-  if (!location.hash.startsWith("#/p/")) toast("請先選一題，再把檔案拖進題目頁");
-});
-
-function route() {
+function route({ keepScroll = false } = {}) {
   view?.destroy();
   const hash = location.hash.slice(1) || "/";
   const m = hash.match(/^\/p\/([\w-]+)\/?$/);
   view = m ? renderProblem(m[1]) : renderHome();
-  window.scrollTo(0, 0);
+  if (!keepScroll) window.scrollTo(0, 0);
   updateHeader();
 }
 
-window.addEventListener("hashchange", route);
+window.addEventListener("hashchange", () => route());
+applyChrome();
 route();

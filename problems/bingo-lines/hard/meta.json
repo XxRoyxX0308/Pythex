@@ -1,11 +1,24 @@
 {
-  "title": "社區賓果之夜",
-  "tags": ["模擬", "計數器", "時間複雜度"],
+  "title": {
+    "zh-Hant": "社區賓果之夜",
+    "en": "Community Bingo Night"
+  },
+  "tags": {
+    "zh-Hant": ["模擬", "計數器", "時間複雜度"],
+    "en": ["simulation", "counters", "time complexity"]
+  },
   "time_limit_ms": 2000,
   "compare": "lines",
-  "hints": [
-    "輸入很多，建議用 data = sys.stdin.read().split() 一次讀完，再用索引往下取。",
-    "不要每抽一個號碼就把整張卡重新檢查一遍。替每張卡準備計數器：rows[r]、cols[c]、diag、anti，記錄每條線已經圈了幾格。",
-    "圈起 (r, c) 時只把相關的計數器加 1，某個計數器剛好變成 N 就代表完成連線。已經連線的住戶之後可以跳過。"
-  ]
+  "hints": {
+    "zh-Hant": [
+      "輸入很多，建議用 data = sys.stdin.read().split() 一次讀完，再用索引往下取。",
+      "不要每抽一個號碼就把整張卡重新檢查一遍。替每張卡準備計數器：rows[r]、cols[c]、diag、anti，記錄每條線已經圈了幾格。",
+      "圈起 (r, c) 時只把相關的計數器加 1，某個計數器剛好變成 N 就代表完成連線。已經連線的住戶之後可以跳過。"
+    ],
+    "en": [
+      "The input is large. Read it all at once with data = sys.stdin.read().split() and walk through it with an index.",
+      "Do not re-check the whole card after every draw. Give each card counters rows[r], cols[c], diag and anti that track how many cells of each line are circled.",
+      "When (r, c) is circled, add 1 to the matching counters only. A counter reaching N means a line is complete. Residents who already have a line can be skipped afterwards."
+    ]
+  }
 }

@@ -1,45 +1,88 @@
 {
-  "version": 1,
+  "version": 2,
+  "languages": [
+    "zh-Hant",
+    "en"
+  ],
   "families": [
     {
       "id": "bingo-lines",
-      "title": "賓果連線",
-      "concept": "在 N × N 的格子上依序標記數字，每標一次就檢查橫排、直行、兩條對角線有沒有連成一線，並判斷誰、在第幾步先完成。",
-      "core": "讀入 N × N 卡片 → 建立「數字 → (列, 行)」對照 → 依序標記公布的數字 → 檢查橫排 / 直行 / 兩條對角線 → 依規則（先後、平手、提前結束）輸出結果",
+      "title": {
+        "zh-Hant": "賓果連線",
+        "en": "Bingo Lines"
+      },
+      "concept": {
+        "zh-Hant": "在 N × N 的格子上依序標記數字，每標一次就檢查橫排、直行、兩條對角線有沒有連成一線，並判斷誰、在第幾步先完成。",
+        "en": "Mark numbers on an N × N grid one by one. After each mark, check whether a row, column or either diagonal is complete, and decide who finishes first and when."
+      },
+      "core": {
+        "zh-Hant": "讀入 N × N 卡片 → 建立「數字 → (列, 行)」對照 → 依序標記公布的數字 → 檢查橫排 / 直行 / 兩條對角線 → 依規則（先後、平手、提前結束）輸出結果",
+        "en": "Read an N × N card → map each number to (row, col) → mark called numbers in order → check row / column / both diagonals → output by the rules (who is first, ties, stopping early)"
+      },
       "problems": [
         {
           "id": "bingo-lines-easy",
           "difficulty": "easy",
-          "title": "大樓窗景",
-          "tags": [
-            "二維串列",
-            "模擬",
-            "字典"
-          ],
+          "title": {
+            "zh-Hant": "大樓窗景",
+            "en": "Lit Windows"
+          },
+          "tags": {
+            "zh-Hant": [
+              "二維串列",
+              "模擬",
+              "字典"
+            ],
+            "en": [
+              "2D list",
+              "simulation",
+              "dict"
+            ]
+          },
           "sample_count": 2,
           "hidden_count": 10
         },
         {
           "id": "bingo-lines-medium",
           "difficulty": "medium",
-          "title": "校慶闖關賽",
-          "tags": [
-            "二維串列",
-            "模擬",
-            "計數"
-          ],
+          "title": {
+            "zh-Hant": "校慶闖關賽",
+            "en": "School Fair Challenge"
+          },
+          "tags": {
+            "zh-Hant": [
+              "二維串列",
+              "模擬",
+              "計數"
+            ],
+            "en": [
+              "2D list",
+              "simulation",
+              "counting"
+            ]
+          },
           "sample_count": 2,
           "hidden_count": 9
         },
         {
           "id": "bingo-lines-hard",
           "difficulty": "hard",
-          "title": "社區賓果之夜",
-          "tags": [
-            "模擬",
-            "計數器",
-            "時間複雜度"
-          ],
+          "title": {
+            "zh-Hant": "社區賓果之夜",
+            "en": "Community Bingo Night"
+          },
+          "tags": {
+            "zh-Hant": [
+              "模擬",
+              "計數器",
+              "時間複雜度"
+            ],
+            "en": [
+              "simulation",
+              "counters",
+              "time complexity"
+            ]
+          },
           "sample_count": 2,
           "hidden_count": 10
         }

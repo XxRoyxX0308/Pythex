@@ -2,6 +2,7 @@
  * private windows and blocked storage must not break the app. */
 
 const KEY = "pythex:v1";
+const DRAFT = "pythex:code:";
 
 function load() {
   try {
@@ -62,12 +63,23 @@ export const store = {
     save();
   },
 
+  /** Code drafts are stored per problem, separately from progress. */
+  draft(id) {
+    try { return localStorage.getItem(DRAFT + id); } catch { return null; }
+  },
+  saveDraft(id, code) {
+    try { localStorage.setItem(DRAFT + id, code); return true; } catch { return false; }
+  },
+  clearDraft(id) {
+    try { localStorage.removeItem(DRAFT + id); } catch { /* ignore */ }
+  },
+
   exportJSON() {
     return JSON.stringify({ solved: state.solved, attempts: state.attempts }, null, 2);
   },
   importJSON(text) {
     const data = JSON.parse(text);
-    if (typeof data !== "object" || !data.solved) throw new Error("格式不正確");
+    if (typeof data !== "object" || !data.solved) throw new Error("invalid format");
     state.solved = { ...state.solved, ...data.solved };
     state.attempts = { ...state.attempts, ...(data.attempts || {}) };
     save();
