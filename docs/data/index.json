@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "families": [
+    {
+      "id": "bingo-lines",
+      "title": "賓果連線",
+      "concept": "在 N × N 的格子上依序標記數字，每標一次就檢查橫排、直行、兩條對角線有沒有連成一線，並判斷誰、在第幾步先完成。",
+      "core": "讀入 N × N 卡片 → 建立「數字 → (列, 行)」對照 → 依序標記公布的數字 → 檢查橫排 / 直行 / 兩條對角線 → 依規則（先後、平手、提前結束）輸出結果",
+      "problems": [
+        {
+          "id": "bingo-lines-easy",
+          "difficulty": "easy",
+          "title": "大樓窗景",
+          "tags": [
+            "二維串列",
+            "模擬",
+            "字典"
+          ],
+          "sample_count": 2,
+          "hidden_count": 10
+        },
+        {
+          "id": "bingo-lines-medium",
+          "difficulty": "medium",
+          "title": "校慶闖關賽",
+          "tags": [
+            "二維串列",
+            "模擬",
+            "計數"
+          ],
+          "sample_count": 2,
+          "hidden_count": 9
+        },
+        {
+          "id": "bingo-lines-hard",
+          "difficulty": "hard",
+          "title": "社區賓果之夜",
+          "tags": [
+            "模擬",
+            "計數器",
+            "時間複雜度"
+          ],
+          "sample_count": 2,
+          "hidden_count": 10
+        }
+      ]
+    }
+  ]
+}

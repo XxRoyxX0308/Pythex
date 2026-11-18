@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pythex</title>
+  <meta name="description" content="Python 線上練習平台：拖入 .py 檔案，在瀏覽器中即時評測，並指出可能的錯誤原因。">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f5bd3'/%3E%3Cpath d='M10 9h7a5 5 0 0 1 0 10h-3v4h-4z' fill='%23fbfbfc'/%3E%3Ccircle cx='16.5' cy='14' r='1.6' fill='%232f5bd3'/%3E%3C/svg%3E">
+  <script>
+    try {
+      var t = (JSON.parse(localStorage.getItem("pythex:v1") || "{}").prefs || {}).theme;
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="modulepreload" href="assets/js/judge.js">
+  <script type="module" src="assets/js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#app">跳到主要內容</a>
+  <header class="site-head">
+    <div class="wrap head-row">
+      <a class="brand" href="#/" aria-label="Pythex 首頁">
+        <span class="brand-mark" aria-hidden="true">py</span>
+        <span class="brand-name">Pythex</span>
+      </a>
+      <div class="head-right">
+        <a id="hdr-progress" class="hdr-progress" href="#/" hidden></a>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="切換主題"></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app" class="wrap" tabindex="-1"></main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <noscript><p class="wrap">Pythex 需要啟用 JavaScript 才能在瀏覽器裡執行 Python。</p></noscript>
+</body>
+</html>
