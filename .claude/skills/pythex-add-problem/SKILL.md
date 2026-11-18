@@ -41,6 +41,9 @@ tools/new_problem.py             產生家族骨架（所有檔案都帶 TODO）
 6. **建置驗證**：`python tools/build.py -v`，修到 0 個錯誤，並逐條處理警告。
 7. **本機預覽**（可選）：`python -m http.server -d docs 8000`，打開 `http://localhost:8000`，用右上角的「EN / 中」切換語言檢查兩個版本。
 8. **提交**：`problems/<slug>/` 和 `docs/data/` 一起 commit。CI 會執行 `python tools/build.py --check`，`docs/data` 沒更新就會失敗。
+   - commit 訊息只描述變更內容。**不要提到 Claude 或任何 AI**：不加 `Co-Authored-By: Claude …`、不加「Generated with Claude Code」之類的署名，作者就是 repo 的 git 使用者。
+   - commit 前先跑 `python tools/build.py --check`，確認通過。
+9. **推送**：`git push origin main`。GitHub Pages 會在 push 後自動更新網站，CI 也會重新驗證。push 前用 `git status -sb` 確認只領先遠端、沒有落後；落後時先 `git pull --rebase` 再重跑 `python tools/build.py --check`。不要 force push。
 
 ## 拆解核心結構
 
@@ -250,7 +253,8 @@ hard 題至少要有一個「答案正確但太慢」的錯誤解，證明壓力
 - [ ] 三題的題名、情境、提問都不同，但核心結構一致
 - [ ] 中英文 statement 規則一致，範例的 `explain` 兩種語言都正確
 - [ ] 輸出與語言無關（只有數字或固定英文詞）
-- [ ] `problems/<slug>/` 與 `docs/data/` 一起 commit
+- [ ] `problems/<slug>/` 與 `docs/data/` 一起 commit，commit 訊息沒有提到 Claude / AI，也沒有 `Co-Authored-By` 署名
+- [ ] 已經 `git push origin main`，`git status -sb` 不再顯示 ahead
 
 ## 常見錯誤
 
